@@ -1,0 +1,2 @@
+# Breakfast & Dining
+Breakfast is served 7:00–10:30 AM in the ground-floor restaurant and is included for all room types except the Basic rate. The restaurant is open for dinner 6:00–10:00 PM. Room service is available 24/7 with a €5 service charge.

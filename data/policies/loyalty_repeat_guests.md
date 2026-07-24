@@ -1,0 +1,2 @@
+# Returning Guests
+Guests with 2 or more previous stays automatically receive a complimentary room upgrade when available and late check-out at no charge. Returning guests should mention their previous stay at check-in or through the concierge chat.

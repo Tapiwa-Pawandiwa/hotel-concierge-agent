@@ -1,0 +1,2 @@
+# Pets, Children & Extra Beds
+Pets under 15kg are welcome for a €20/night cleaning fee, maximum 2 per room. Children under 12 stay free using existing bedding. Cribs and extra beds are available on request, subject to room size, at €15/night.
