@@ -4,3 +4,7 @@ __pycache__/
 .env
 node_modules/
 dist/
+docs/mycheckpoint.html
+.DS_Store
+CLAUDE.md.mybackup
+.claude/settings.local.json

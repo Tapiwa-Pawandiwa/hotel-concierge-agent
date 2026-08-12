@@ -1,0 +1,1568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hotel Concierge Agent — Technical Implementation Proposal (Draft v1)</title>
+<style>
+  :root {
+    --bg: #fbfaf8; --panel: #ffffff; --ink: #22201d; --ink-soft: #57534d;
+    --border: #e7e2da; --accent: #9c4221; --accent-soft: #f4e3d8;
+    --code-bg: #2b2a28; --code-ink: #eae6df;
+    --good: #2f6f4e; --bad: #b3401f; --warn: #9a6a00; --link: #9c4221;
+    --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1b1a18; --panel: #242220; --ink: #eae6df; --ink-soft: #b9b3a8;
+      --border: #3a3733; --accent: #e08b5f; --accent-soft: #3a2c22;
+      --code-bg: #14130f; --code-ink: #e8e3da;
+      --good: #6fbf94; --bad: #e2725a; --warn: #d9a441; --link: #e08b5f;
+      --shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--ink); line-height: 1.55; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 2.5rem 1.5rem 6rem; }
+  header.hero { border-bottom: 2px solid var(--border); padding-bottom: 1.5rem; margin-bottom: 2rem; }
+  header.hero h1 { font-size: 1.85rem; margin: 0 0 0.3rem; }
+  header.hero .sub { color: var(--ink-soft); font-size: 0.98rem; }
+  .meta-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; }
+  .pill { background: var(--accent-soft); color: var(--accent); border-radius: 999px; padding: 0.25rem 0.75rem; font-size: 0.82rem; font-weight: 600; }
+  nav.toc { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 1.1rem 1.5rem; margin-bottom: 2.5rem; box-shadow: var(--shadow); }
+  nav.toc h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-soft); margin: 0 0 0.6rem; }
+  nav.toc ol { columns: 2; column-gap: 2rem; margin: 0; padding-left: 1.2rem; }
+  nav.toc li { margin-bottom: 0.3rem; }
+  nav.toc a { color: var(--link); text-decoration: none; font-size: 0.92rem; }
+  nav.toc a:hover { text-decoration: underline; }
+  section { margin-bottom: 2.6rem; }
+  section h2 { font-size: 1.3rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 1.1rem; scroll-margin-top: 1rem; }
+  section h3 { font-size: 1rem; margin-top: 1.5rem; scroll-margin-top: 1rem; }
+  p { margin: 0.55rem 0; }
+  code { background: var(--code-bg); color: var(--code-ink); padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.87em; font-family: "SF Mono", Menlo, Consolas, monospace; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 1.1rem 1.4rem; margin: 0.9rem 0; box-shadow: var(--shadow); }
+  .why { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 0.7rem 1rem; margin: 0.7rem 0; border-radius: 0 6px 6px 0; font-size: 0.94rem; }
+  table { width: 100%; border-collapse: collapse; margin: 0.7rem 0 1.1rem; font-size: 0.87rem; }
+  th, td { text-align: left; padding: 0.5rem 0.7rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--ink-soft); font-weight: 600; font-size: 0.76rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  tr:last-child td { border-bottom: none; }
+  .badge { display: inline-block; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; padding: 0.15rem 0.5rem; border-radius: 4px; letter-spacing: 0.03em; }
+  .badge.bug { background: var(--bad); color: #fff; }
+  .badge.warn { background: var(--warn); color: #241d00; }
+  .badge.ok { background: var(--good); color: #fff; }
+  .badge.unknown { background: var(--ink-soft); color: var(--panel); }
+  .badge.t1 { background: var(--good); color: #fff; }
+  .badge.t2 { background: var(--warn); color: #241d00; }
+  .badge.t3 { background: var(--bad); color: #fff; }
+  details.filecard { border: 1px solid var(--border); border-radius: 10px; margin: 0.8rem 0; overflow: hidden; box-shadow: var(--shadow); background: var(--panel); }
+  details.filecard summary { cursor: pointer; background: var(--code-bg); color: var(--code-ink); padding: 0.6rem 1rem; font-family: monospace; font-size: 0.87rem; list-style: none; display: flex; justify-content: space-between; gap: 1rem; }
+  details.filecard summary::-webkit-details-marker { display: none; }
+  details.filecard summary::after { content: "▸"; color: var(--ink-soft); transition: transform 0.15s; }
+  details.filecard[open] summary::after { transform: rotate(90deg); }
+  details.filecard .body { padding: 0.9rem 1.3rem; }
+  details.filecard ul { margin: 0.4rem 0; padding-left: 1.2rem; }
+  .tag { font-size: 0.7rem; background: var(--border); color: var(--ink-soft); padding: 0.1rem 0.5rem; border-radius: 4px; }
+  .diagram { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 1.4rem; box-shadow: var(--shadow); overflow-x: auto; }
+  .diagram .mermaid { display: flex; justify-content: center; min-width: 700px; }
+  .diagram-caption { color: var(--ink-soft); font-size: 0.83rem; margin-top: 0.5rem; }
+  footer { color: var(--ink-soft); font-size: 0.8rem; border-top: 1px solid var(--border); padding-top: 1.2rem; margin-top: 3rem; }
+  a { color: var(--link); }
+  .cite { font-size: 0.78rem; color: var(--ink-soft); }
+  .cite code { font-size: 0.85em; }
+  .phase-num { display: inline-flex; align-items: center; justify-content: center; width: 1.6rem; height: 1.6rem; border-radius: 999px; background: var(--accent); color: #fff; font-size: 0.8rem; font-weight: 700; margin-right: 0.5rem; }
+  pre { background: var(--code-bg); color: var(--code-ink); padding: 1rem 1.2rem; border-radius: 8px; overflow-x: auto; font-size: 0.82rem; line-height: 1.55; margin: 0.7rem 0 1.1rem; }
+  pre code { background: none; color: inherit; padding: 0; font-size: 1em; }
+  .filename { display: block; font-family: monospace; font-size: 0.78rem; color: var(--ink-soft); margin-bottom: 0.3rem; }
+  @media print {
+    nav.toc { break-inside: avoid; }
+    section { break-inside: avoid-page; }
+    details.filecard:not([open]) > *:not(summary) { display: block !important; }
+    details.filecard summary::after { content: ""; }
+    .diagram { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <h1>🏨 Technical Implementation Proposal — Hotel Concierge Agent (Draft v1)</h1>
+  <div class="sub">First-draft engineering proposal for turning the design conversation into a build plan. Companion document to <code>docs/mycheckpoint.html</code> (current-state audit) and the working design roadmap — not a replacement for either.</div>
+  <div class="meta-row">
+    <span class="pill">Draft v1</span>
+    <span class="pill">Status: proposal, not yet approved</span>
+    <span class="pill">docs/implementation_proposal.html</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#summary">1. Executive summary</a></li>
+    <li><a href="#baseline">2. Current-state baseline</a></li>
+    <li><a href="#architecture">3. System context, boundaries &amp; target architecture</a></li>
+    <li><a href="#database">4. Database architecture</a></li>
+    <li><a href="#knowledge">5. Knowledge representation &amp; embeddings</a></li>
+    <li><a href="#tradeoffs">6. Architecture choices &amp; trade-offs</a></li>
+    <li><a href="#human-loop">7. Human-in-the-loop</a></li>
+    <li><a href="#schema-refactor">8. Foundational schema refactor</a></li>
+    <li><a href="#phases">9. Phased implementation plan</a></li>
+    <li><a href="#data-model">10. Data model catalogue</a></li>
+    <li><a href="#tools">11. Tool &amp; agent inventory (risk-tiered)</a></li>
+    <li><a href="#departments">12. Departments &amp; roles</a></li>
+    <li><a href="#resilience">13. Resilience architecture</a></li>
+    <li><a href="#stack">14. Technology stack — current + additions</a></li>
+    <li><a href="#decisions">15. Open decisions requiring sign-off</a></li>
+    <li><a href="#risks">16. Risks carried forward</a></li>
+    <li><a href="#kickoff">17. Kickoff package — roadmap to ready-to-code</a></li>
+  </ol>
+</nav>
+
+<section id="summary">
+  <h2>1. Executive summary</h2>
+  <p>
+    This document proposes a concrete build plan for extending the current single-agent RAG concierge (documented in
+    <code>docs/mycheckpoint.html</code>) into the full system designed across an extended scoping conversation: a
+    guest-facing conversational agent covering check-in, ordering, and event inquiries, and a staff-facing operations
+    agent covering intake, routing, approvals, and financial reconciliation — all built on a mocked-enterprise pattern
+    (simulated PMS/POS/ERP/WFM feeds) rather than live third-party integrations, so the whole thing runs standalone.
+  </p>
+  <p>
+    Everything in this plan reduces to four primitives, repeated at every layer: a <strong>who</strong> (guest, staff
+    member, or room), a <strong>request</strong> (something someone wants done), a <strong>charge</strong> (anything
+    posted to a guest's bill), and a <strong>signal</strong> (an external event — sensor, lock, payment, mock vendor
+    feed — that creates or updates a request or charge, and carries no logic of its own). Every feature below is an
+    instance of one of these four things, not a new architectural concept.
+  </p>
+  <div class="why">This is a <strong>first draft</strong>. Section 11 lists specific defaults that were made unilaterally during design and need explicit sign-off, and Section 4 flags one piece of required foundational work — splitting <code>guests</code> into identity and reservation records — that nothing else in the plan can proceed without.</div>
+</section>
+
+<section id="baseline">
+  <h2>2. Current-state baseline</h2>
+  <p class="cite">Reproduced in full below — schema, bug, and all — so this proposal reads start-to-finish without needing <code>docs/mycheckpoint.html</code> open alongside it. That document remains the source audit this section was drawn from.</p>
+  <p>
+    What exists today: one ADK agent (<code>concierge_agent</code>) wrapping Claude Haiku 4.5 via LiteLLM, two tools
+    (<code>retrieve_hotel_policy</code> — real RAG over six policy markdown files via Voyage embeddings + pgvector
+    cosine search; <code>lookup_guest_profile</code> — structured guest lookup), a Supabase Postgres database with
+    <code>policy_chunks</code> and <code>guests</code> tables, and an offline ingestion script. No web frontend, no
+    API server code beyond ADK's built-in dev server, no tests, no deployment configuration.
+  </p>
+  <table>
+    <tr><th>ID</th><th>Issue</th><th>Severity</th><th>Blocks</th></tr>
+    <tr><td>R1</td><td><code>lookup_guest_profile</code> has a real runtime bug (missing call parens, invalid <code>::vector</code> cast on a text column, wrong tuple syntax)</td><td><span class="badge bug">Bug</span></td><td>Any guest-specific feature</td></tr>
+    <tr><td>R2</td><td>No access control on guest lookup — any chat user supplying/guessing a <code>guest_id</code> gets that guest's PII</td><td><span class="badge warn">Security</span></td><td>Everything guest-identity-related</td></tr>
+    <tr><td>R3</td><td>Single shared DB connection, no reconnect/pooling logic</td><td><span class="badge warn">Reliability</span></td><td>Multi-user concurrency, Addendum D resilience</td></tr>
+    <tr><td>R4</td><td>No committed dependency manifest (<code>requirements.txt</code>/lockfile)</td><td><span class="badge warn">Reproducibility</span></td><td>Onboarding, CI</td></tr>
+    <tr><td>R5</td><td>No committed schema/migrations — live schema only inferred from code</td><td><span class="badge warn">Schema drift</span></td><td>Every phase below</td></tr>
+    <tr><td>R6</td><td>No automated tests</td><td><span class="badge unknown">Gap</span></td><td>Milestone 6 eval harness</td></tr>
+    <tr><td>R7</td><td>No deployment/infrastructure configuration</td><td><span class="badge unknown">Gap</span></td><td>Nothing near-term</td></tr>
+    <tr><td>R8</td><td>Local ADK session store committed to git</td><td><span class="badge warn">Housekeeping</span></td><td>Nothing functional</td></tr>
+  </table>
+  <p>R1, R4, and R5 are addressed directly in Phase 0 below, since nothing else can be built reliably on top of them.</p>
+
+  <h3>The actual current schema, verbatim</h3>
+  <p class="cite">Reproduced directly rather than left as a reference — this is what exists in Supabase today, exactly as inferred from <code>ingest.py</code> and <code>tools.py</code> (no committed migration exists, per R5).</p>
+  <pre><code>-- guests (current — one flat row per stay, no identity/reservation split)
+guest_id            text PRIMARY KEY   -- format G0001..G0300, sequential and guessable (R2)
+guest_name           text
+guest_email          text
+hotel                text              -- Kaggle source column, single-property scope makes this dead weight
+country              text
+lead_time            int
+arrival_date_year    int
+arrival_date_month   text
+arrival_date_day     int
+adults               int
+children             int
+babies               int
+is_repeated_guest    bool
+previous_cancellations int
+reserved_room_type   text
+customer_type        text
+adr                  numeric
+
+-- policy_chunks (current — this one's fine, no changes needed)
+source_file          text
+content              text
+embedding            vector(1024)</code></pre>
+
+  <h3>The actual bug, verbatim</h3>
+  <p class="cite"><code>agent/concierge_agent/tools.py:59-61</code></p>
+  <pre><code># Current (broken) — three separate defects in three lines
+cur = conn.cursor            # missing call parens: this is a method object, not a cursor
+cur.execute(
+    "SELECT * FROM guests WHERE guest_id = %s::vector",  # ::vector cast on a *text* column — invalid
+    (guest_id)                # missing trailing comma — this is a str in parens, not a 1-tuple
+)
+
+# Phase 0 fix
+cur = conn.cursor()
+cur.execute(
+    "SELECT * FROM guests WHERE guest_id = %s",
+    (guest_id,)
+)</code></pre>
+  <p>This is the literal, complete defect — not a paraphrase of it. Fixing it is three line-level changes; the reason it's called out at proposal level rather than left as a one-line JIRA ticket is R2: once this runs, it returns full PII for whatever <code>guest_id</code> is supplied, with nothing checking the requester is that guest. Phase 0's fix has to ship both corrections together — the query fix and a basic requester/guest-identity check — or it trades a crash for a silent data leak.</p>
+</section>
+
+<section id="architecture">
+  <h2>3. System context, boundaries &amp; target architecture</h2>
+  <p><strong>System context and trust boundaries.</strong> The most important boundary to understand: the mocked PMS/POS/ERP/WFM layer and the sensor/lock simulator are <em>inside</em> our own trust boundary — they're simulation code this project owns, not real third parties. Only three things actually cross the network to an external provider with credentials: Anthropic's Claude API, Voyage AI's embeddings API, and Stripe (test mode). Supabase sits in its own boundary as the managed data layer.</p>
+  <div class="diagram">
+    <div class="mermaid">
+flowchart LR
+    classDef actor fill:#f4e3d8,stroke:#9c4221,stroke-width:1.5px,color:#22201d
+    classDef app fill:#dce7f5,stroke:#2f5f8f,stroke-width:1.5px,color:#22201d
+    classDef llm fill:#ecdff5,stroke:#6b3fa0,stroke-width:1.5px,color:#22201d
+    classDef db fill:#dcf0e3,stroke:#2f6f4e,stroke-width:1.5px,color:#22201d
+    classDef mock fill:#fdf3dc,stroke:#9a6a00,stroke-width:1.5px,color:#22201d
+
+    Guest(["Guest"]):::actor
+    Staff(["Staff — role selector"]):::actor
+
+    subgraph APP["Trust boundary: application process(es), owned"]
+        Concierge["concierge_agent"]:::app
+        Ops["ops_agent"]:::app
+        Sales["sales_agent"]:::app
+        MockLayer["Mocked PMS / POS / ERP / WFM<br/>+ sensor / lock simulator<br/><small>in-process — not a real 3rd party</small>"]:::mock
+    end
+
+    subgraph EXT["Trust boundary: real third-party cloud APIs"]
+        Claude[["Anthropic Claude API"]]:::llm
+        Voyage[["Voyage AI embeddings"]]:::llm
+        Stripe[["Stripe — test mode"]]:::llm
+    end
+
+    subgraph DATA["Trust boundary: Supabase managed Postgres"]
+        PG[("Postgres + pgvector<br/><small>all tables, one engine</small>")]:::db
+    end
+
+    Guest --> Concierge
+    Staff --> Ops
+    Staff --> Sales
+    Concierge -->|"HTTPS, API key"| Claude
+    Ops -->|"HTTPS, API key"| Claude
+    Sales -->|"HTTPS, API key"| Claude
+    Concierge -.->|"embed/search, API key"| Voyage
+    Concierge -.->|"test-mode charges, API key"| Stripe
+    Concierge --> MockLayer
+    Ops --> MockLayer
+    Sales --> MockLayer
+    Concierge -->|"SQL over TLS"| PG
+    Ops -->|"SQL over TLS"| PG
+    Sales -->|"SQL over TLS"| PG
+    MockLayer -->|"SQL over TLS"| PG
+    </div>
+    <div class="diagram-caption">Credentials cross the trust boundary only at the EXT subgraph — three real external dependencies, not the many the mocked-enterprise pattern might suggest at a glance.</div>
+  </div>
+
+  <p><strong>Target application architecture.</strong> Three ADK sub-agents sharing one data layer, with all external systems — real or simulated — entering through a single adapter/signal boundary rather than being wired in ad hoc.</p>
+  <div class="diagram">
+    <div class="mermaid">
+flowchart TB
+    classDef actor fill:#f4e3d8,stroke:#9c4221,stroke-width:1.5px,color:#22201d
+    classDef app fill:#dce7f5,stroke:#2f5f8f,stroke-width:1.5px,color:#22201d
+    classDef core fill:#ecdff5,stroke:#6b3fa0,stroke-width:1.5px,color:#22201d
+    classDef ext fill:#fdf3dc,stroke:#9a6a00,stroke-width:1.5px,color:#22201d
+    classDef db fill:#dcf0e3,stroke:#2f6f4e,stroke-width:1.5px,color:#22201d
+
+    Guest(["Guest — chat / kiosk"]):::actor
+    Staff(["Staff — dashboard, role selector"]):::actor
+
+    subgraph AGENTS["AI Orchestration — ADK sub_agents"]
+        Concierge["concierge_agent<br/><small>guest-facing</small>"]:::app
+        Ops["ops_agent<br/><small>staff-facing — routing, monitoring, compensation</small>"]:::app
+        Sales["sales_agent<br/><small>staff-facing — event feasibility, quotes, approval</small>"]:::app
+    end
+
+    subgraph CORE["Core primitives"]
+        Requests[("Requests")]:::core
+        Charges[("Charges / Guest Bills")]:::core
+        Signals["Signal / Adapter boundary"]:::core
+    end
+
+    subgraph ADAPTERS["Mocked external systems — one adapter pattern"]
+        Sensors["Room sensors / locks"]:::ext
+        StripeAdapter["Stripe — test mode"]:::ext
+        MEL["PMS / POS / ERP / WFM mocks"]:::ext
+    end
+
+    DB[("Supabase Postgres + pgvector")]:::db
+
+    Guest --> Concierge
+    Staff --> Ops
+    Staff --> Sales
+    Concierge --> Requests
+    Concierge --> Charges
+    Ops --> Requests
+    Ops --> Charges
+    Sales --> Requests
+    Sales --> MEL
+    Sensors --> Signals
+    StripeAdapter --> Signals
+    MEL --> Signals
+    Signals --> Requests
+    Signals --> Charges
+    Requests --> DB
+    Charges --> DB
+    </div>
+    <div class="diagram-caption">Every mocked system (sensors, payments, PMS/POS/ERP/WFM) enters through the same signal boundary — one adapter principle, not a separate "enterprise layer" alongside it. Three agents, not more: the split tracks reasoning mode and trust boundary (guest chat / staff routing / sales approval), not data domain — see §6 for why this isn't a wider multi-agent swarm.</div>
+  </div>
+
+  <p><strong>Database connections.</strong> Current code (R3) opens a single <code>psycopg</code> connection at import time and reuses it for the process lifetime — no pooling, no reconnect logic. Proposed fix: route through Supabase's session pooler (the right choice already made early on, for IPv4 reachability and full session-level feature support) with a small connection pool per process, so concurrent guest sessions and the addition of more agent processes don't starve or hard-fail on one dropped connection.</p>
+  <div class="diagram">
+    <div class="mermaid">
+flowchart TB
+    classDef app fill:#dce7f5,stroke:#2f5f8f,stroke-width:1.5px,color:#22201d
+    classDef db fill:#dcf0e3,stroke:#2f6f4e,stroke-width:1.5px,color:#22201d
+    classDef warn fill:#fdf3dc,stroke:#9a6a00,stroke-width:1.5px,color:#22201d
+
+    ConciergeProc["concierge_agent process"]:::app
+    OpsProc["ops_agent process"]:::app
+    SalesProc["sales_agent process"]:::app
+    Pool{{"Supabase session pooler<br/><small>IPv4, port 5432</small>"}}:::warn
+    PG[("Postgres primary + pgvector")]:::db
+
+    ConciergeProc -->|"psycopg3, small pool"| Pool
+    OpsProc -->|"psycopg3, small pool"| Pool
+    SalesProc -->|"psycopg3, small pool"| Pool
+    Pool --> PG
+    </div>
+    <div class="diagram-caption">One pooler, all three agent processes — avoids each process opening its own unpooled connection, the failure mode R3 currently describes.</div>
+  </div>
+</section>
+
+<section id="database">
+  <h2>4. Database architecture</h2>
+
+  <h3>SQL, not NoSQL — and why</h3>
+  <p>This system is SQL throughout — a single Postgres instance (via Supabase) serves both the relational data and, via the <code>pgvector</code> extension, the vector-similarity search behind RAG. No document store and no separate vector database are used.</p>
+  <p>Almost everything here is relationships, not documents: a guest has reservations; a reservation has bill items; a bill item may reference an order; an order references menu items; an event booking has allocations referencing spaces, rooms, and vendors. Modeling that in a document database means denormalizing the same facts across multiple documents and manually keeping them consistent, or constantly reaching across collections anyway — foreign keys and joins are the natural fit for data this interconnected. Billing specifically needs real ACID guarantees: a payment capture and the guest-bill status it updates cannot be allowed to disagree, and Postgres transactions make "money reconciles, or the whole write rolls back" a property that comes for free rather than something built by hand.</p>
+  <p>The one piece that might look like a NoSQL/specialized-database job — semantic search over policy documents — doesn't need a dedicated vector database either. <code>pgvector</code> adds a vector column type and distance operators directly to Postgres, so the same database, connection, and backup story serves both jobs. Trade-off worth naming honestly: a dedicated vector database (Pinecone, Weaviate, Qdrant) would out-perform pgvector at very large corpus sizes and offers more specialized indexing. This system's knowledge base is a handful of short policy documents — single-digit thousands of chunks at most, even after every addendum's new policy doc is added — and at that scale, pgvector's simplicity (one engine, one thing to keep alive) wins decisively over the operational cost of a second database purely for embeddings.</p>
+
+  <h3>Conceptual class diagram — the four primitives as an object model</h3>
+  <div class="why"><strong>Revised after review.</strong> The first draft modeled <code>Who</code> as one abstract class covering Guest, StaffMember, <em>and</em> Room. That conflates two genuinely different domain concepts: actors (entities that initiate requests, hold permissions, incur financial liability) and resources (physical assets with capacity/availability, but no intentions of their own). A room doesn't "do" anything — it's booked, cleaned, and occupied by actors. Fixed below by splitting <code>Who</code> into <code>Actor</code> and <code>Resource</code> as two distinct branches. The project's four-primitive framing (Section 1) still holds — this is a refinement of what "Who" contains, not a departure from it.</div>
+  <p>Distinct from the physical schema below: this is the mental model expressed as an actual class hierarchy, showing how every concrete table is an instance of one of a small number of abstract shapes.</p>
+  <div class="diagram">
+    <div class="mermaid">
+classDiagram
+    class Actor {
+        &lt;&lt;abstract&gt;&gt;
+        +uuid id
+    }
+    class Guest
+    class StaffMember
+    Actor &lt;|-- Guest
+    Actor &lt;|-- StaffMember
+
+    class Resource {
+        &lt;&lt;abstract&gt;&gt;
+        +uuid id
+        +string status
+    }
+    class Room
+    class EventSpace
+    class EquipmentInventoryItem
+    class MenuItem
+    Resource &lt;|-- Room
+    Resource &lt;|-- EventSpace
+    Resource &lt;|-- EquipmentInventoryItem
+    Resource &lt;|-- MenuItem
+
+    class Request {
+        &lt;&lt;abstract&gt;&gt;
+        +string department
+        +string priority
+        +string visibility_tier
+        +string status
+    }
+    class StaffTask
+    class Order
+    class EventBooking
+    class RestaurantReservation
+    class ExperienceBooking
+    Request &lt;|-- StaffTask
+    Request &lt;|-- Order
+    Request &lt;|-- EventBooking
+    Request &lt;|-- RestaurantReservation
+    Request &lt;|-- ExperienceBooking
+
+    class Financial {
+        &lt;&lt;abstract&gt;&gt;
+        +decimal amount
+        +string status
+    }
+    class BillItem
+    class Payment
+    class VendorPurchaseOrder
+    Financial &lt;|-- BillItem
+    Financial &lt;|-- Payment
+    Financial &lt;|-- VendorPurchaseOrder
+
+    class Signal {
+        &lt;&lt;interface&gt;&gt;
+    }
+    class RoomSensorEvent
+    class VendorWebhook
+    class PaymentConfirmation
+    Signal &lt;|.. RoomSensorEvent
+    Signal &lt;|.. VendorWebhook
+    Signal &lt;|.. PaymentConfirmation
+
+    Actor "1" --&gt; "many" Request : initiates
+    Request "0..1" --&gt; "many" Resource : targets
+    Request "1" --&gt; "0..1" Financial : "may generate"
+    Signal ..&gt; Request : creates/updates
+    Signal ..&gt; Financial : creates/updates
+    </div>
+    <div class="diagram-caption">Every table in the catalogues below is a concrete subclass of one of these five shapes — Actor and Resource together make up "Who" from Section 1's plain-language framing; Financial is what Section 1 calls "Charge."</div>
+  </div>
+
+  <h3>Entity relationships — full schema, by bounded context</h3>
+  <div class="why">The first draft of this section deliberately showed abbreviated diagrams — a handful of fields per table, just enough to establish the pattern. That undersold what's actually been designed. Below is the complete schema as specified across the roadmap, one diagram per bounded context, full attribute lists, nothing trimmed.</div>
+
+  <h3>1 — Guest identity, rooms &amp; stay lifecycle</h3>
+  <div class="diagram">
+    <div class="mermaid">
+erDiagram
+    GUESTS ||--o{ RESERVATIONS : makes
+    GUESTS ||--o{ GUEST_NOTES : has
+    RESERVATIONS }o--|| ROOM_TYPES : requests
+    RESERVATIONS ||--o| ROOMS : "assigned to"
+    RESERVATIONS ||--o{ KEYCARDS : issues
+    RESERVATIONS }o--o| EVENT_BOOKINGS : "group-linked to"
+    ROOM_TYPES ||--o{ ROOMS : "has instances"
+    ROOM_TYPES ||--o{ ROOM_FEATURES : "standard features"
+    ROOMS ||--o{ ROOM_FEATURES : "specific overrides"
+    ROOMS ||--o{ ROOM_SENSOR_EVENTS : emits
+    ROOM_TYPES ||--o{ RATE_CALENDAR : "priced by date"
+
+    GUESTS {
+        uuid id PK
+        text first_name
+        text last_name
+        text email
+        text phone
+        text country_code
+        text preferred_language
+        text stripe_customer_id
+        text accessibility_flags
+        text dietary_flags
+        timestamp created_at
+    }
+    GUEST_NOTES {
+        uuid id PK
+        uuid guest_id FK
+        text reservation_id FK
+        text note_type
+        text target_department
+        text note_text
+        text source
+        timestamp created_at
+    }
+    RESERVATIONS {
+        text booking_reference PK
+        uuid guest_id FK
+        uuid room_type_id FK
+        uuid room_id FK
+        uuid group_booking_id FK
+        date check_in_date
+        date check_out_date
+        numeric adr
+        text status
+    }
+    ROOM_TYPES {
+        uuid id PK
+        text name
+        text bed_config
+        int max_occupancy
+        int sq_meters
+    }
+    ROOMS {
+        uuid id PK
+        uuid room_type_id FK
+        text room_number
+        int floor
+        text view_type
+        text occupancy_status
+        text housekeeping_status
+        text operational_status
+        text energy_mode
+    }
+    ROOM_FEATURES {
+        uuid id PK
+        uuid room_type_id FK
+        uuid room_id FK
+        text feature
+    }
+    KEYCARDS {
+        uuid id PK
+        uuid room_id FK
+        uuid guest_id FK
+        text reservation_id FK
+        text access_type
+        timestamp issued_at
+        timestamp expires_at
+        text status
+    }
+    ROOM_SENSOR_EVENTS {
+        uuid id PK
+        uuid room_id FK
+        text event_type
+        text source
+        timestamp occurred_at
+    }
+    RATE_CALENDAR {
+        uuid id PK
+        uuid room_type_id FK
+        date date
+        numeric rate
+        int min_stay
+    }
+    </div>
+    <div class="diagram-caption"><code>RESERVATIONS</code> exists as its own entity (Section 8) rather than being flattened into <code>GUESTS</code> as it is today. <code>ROOM_FEATURES</code> covers accessible/smoking/view tags at either the type or instance level, per Addendum A/Milestone 2.</div>
+  </div>
+  <div class="why"><strong>Revised after review — guest identity was underspecified.</strong> Added <code>phone</code> (SMS/kiosk-auth), split name into <code>first_name</code>/<code>last_name</code>, <code>preferred_language</code>, and <code>stripe_customer_id</code> (a persistent payment-method reference — consistent with the tokenization design in Section 2/Addendum C, doesn't touch anything new). Added <code>accessibility_flags</code> and <code>dietary_flags</code> as small indexed arrays directly on <code>GUESTS</code>, alongside <code>GUEST_NOTES</code> rather than instead of it — critical, automatable checks (a nut allergy an ordering tool must always see) shouldn't have to be parsed out of free text, while everything else (a one-off preference, a complaint) stays in the flexible notes table. <code>GUEST_NOTES</code> also gained <code>target_department</code> and a <code>reservation_id</code> link, so a note can route to whoever needs it and tie to a specific stay rather than floating unattached. <strong>Deliberately not added:</strong> a <code>loyalty_tier</code> field — Addendum E explicitly decided against a structured loyalty system; adding the column back would quietly reverse that decision, so it's left out on purpose, not by oversight.</div>
+  <div class="why"><strong>Reviewed against real-world PMS schemas (OPERA Cloud, Mews, Cloudbeds), 2026-08-05.</strong> Checked point by point against Principle IX (No Speculative Features): a <code>ROOM_CLASS</code> grouping above room type, a fully separate <code>ROOM_ASSIGNMENT</code> audit table, a multi-<code>RATE_PLAN</code> dimension on rates, a structured <code>GUEST_PREFERENCE</code>/room-scoring engine, and <code>BUILDING</code>/<code>FLOOR</code> as separate entities are all real patterns in enterprise PMS — correctly out of scope here, since nothing at this property's scale needs the extra hierarchy (single boutique property, a handful of room types, one building). <code>GUEST_PREFERENCE</code> in particular is the same table Principle IX already names as an explicit exclusion. <strong>Revised again same day:</strong> normalized <code>BED_TYPES</code> and a categorized <code>features</code> lookup table were also marked "skip, nothing queries it" — wrong reasoning, not just an outdated fact. The real gap wasn't the shape of <code>bed_config</code>/<code>ROOM_FEATURES.feature</code>, it was that no tool surfaced them to the agent at all; <code>list_room_types</code> (§11) closes that. Plain text stays the right representation even now that a consumer exists — the agent matches "a suite with a couch" against a handful of returned rows via its own reasoning, which handles real ambiguity (does a sofa bed count as "a bed"?) better than a rigid <code>bed_count</code> column would, and structured filtering only earns its cost at row counts far larger than 4-6 room types. One gap was real and adopted regardless: <code>ROOMS</code> had no way to represent a room taken offline for repairs, which directly affects <code>create_booking</code>/<code>check_in_guest</code> — tools in this scope, not hypothetical ones — so <code>operational_status</code> is added above as a third independent axis alongside <code>occupancy_status</code>/<code>housekeeping_status</code>, the same pattern already used for those two. <strong>Not yet live</strong> — migration 003 already shipped without it, so it needs its own follow-up migration (005) before <code>create_booking</code> (T016) is written, since T016's availability count must exclude <code>out_of_order</code> rooms, and <code>list_room_types</code> needs the same exclusion. Also synced here: <code>room_number</code> (human-readable, e.g. "201") was added via migration 004 directly in implementation, ahead of this diagram — captured now for the diagram to match reality, not the other way around.</div>
+
+  <h3>2 — Billing &amp; finance</h3>
+  <div class="diagram">
+    <div class="mermaid">
+erDiagram
+    RESERVATIONS ||--|| GUEST_BILLS : opens
+    GUEST_BILLS ||--o{ BILL_ITEMS : contains
+    GUEST_BILLS ||--o{ PAYMENTS : settles
+    BILL_ITEMS }o--|| ACCOUNTING_CODE_MAPPINGS : "categorized by"
+    BILL_ITEMS }o--o| ORDERS : "sourced from"
+
+    GUEST_BILLS {
+        uuid id PK
+        text reservation_id FK
+        uuid guest_id FK
+        int folio_number
+        text billing_type
+        text status
+        timestamp opened_at
+        timestamp closed_at
+        numeric balance
+    }
+    BILL_ITEMS {
+        uuid id PK
+        uuid guest_bill_id FK
+        text charge_type
+        numeric amount
+        text currency
+        uuid source_order_id FK
+        text status
+        date business_date
+        text accounting_code
+        timestamp created_at
+    }
+    ACCOUNTING_CODE_MAPPINGS {
+        text code PK
+        text description
+    }
+    PAYMENTS {
+        uuid id PK
+        uuid guest_bill_id FK
+        numeric amount
+        text method
+        text stripe_token_ref
+        text status
+        timestamp authorized_at
+        timestamp captured_at
+    }
+    DAILY_CLOSEOUTS {
+        uuid id PK
+        date business_date
+        timestamp run_at
+        text status
+        numeric total_room_revenue
+        numeric total_tax
+        numeric total_food_beverage_revenue
+        bool accounting_export_done
+    }
+    </div>
+    <div class="diagram-caption"><code>DAILY_CLOSEOUTS</code> has no direct foreign keys — it's a batch summary aggregating <code>GUEST_BILLS</code>/<code>BILL_ITEMS</code> by <code>business_date</code>, not a row-level relationship.</div>
+  </div>
+  <div class="why"><strong>Revised after review.</strong> <code>GUEST_BILLS</code> gained <code>folio_number</code> — real hotels support more than one folio per stay (e.g. folio 1 for room rate routed to a corporate account, folio 2 for personal incidentals the guest pays directly), and one integer is enough to support that split without a bigger redesign. Just as important, a policy rather than a schema change: <code>BILL_ITEMS</code> should be append-only. A posted charge is never <code>UPDATE</code>d — a correction is a new offsetting row (negative amount, same accounting code), so the ledger stays a true audit trail rather than something that can quietly be edited after the fact. Worth stating explicitly here since nothing in the column list alone enforces it.</div>
+
+  <h3>3 — Operations &amp; requests</h3>
+  <div class="diagram">
+    <div class="mermaid">
+erDiagram
+    STAFF ||--o{ STAFF_DEPARTMENTS : covers
+    STAFF ||--o{ STAFF_TASKS : "assigned to"
+    STAFF_TASKS }o--o{ STAFF_DEPARTMENTS : "routed to"
+    RESERVATIONS ||--o{ STAFF_TASKS : "may relate to"
+    ROOMS ||--o{ STAFF_TASKS : "may target"
+
+    STAFF {
+        uuid id PK
+        text name
+        text email
+        text clearance_tier
+        text title
+        text status
+    }
+    STAFF_DEPARTMENTS {
+        uuid staff_id FK
+        text department
+    }
+    STAFF_TASKS {
+        uuid id PK
+        text summary
+        text department
+        text priority
+        text visibility_tier
+        text status
+        text reservation_id FK
+        uuid room_id FK
+        text location_text
+        uuid assigned_to FK
+        timestamp due_at
+        timestamp acknowledged_at
+        timestamp completed_at
+        timestamp created_at
+    }
+    </div>
+    <div class="diagram-caption">One universal request shape (Section 1) — kitchen tickets, housekeeping dispatch, and guest special requests are all rows here, distinguished only by department tag and visibility tier. <code>room_id</code>/<code>location_text</code> let a task target a physical place independent of any guest reservation (a lobby elevator fault has no <code>reservation_id</code> to attach to). <code>due_at</code>/<code>acknowledged_at</code>/<code>completed_at</code> are what actually make Milestone 4's stale-task monitoring computable rather than aspirational.</div>
+  </div>
+
+  <h3>4 — Food &amp; beverage</h3>
+  <div class="diagram">
+    <div class="mermaid">
+erDiagram
+    GUESTS ||--o{ ORDERS : places
+    RESERVATIONS ||--o{ ORDERS : "billed under"
+    ROOMS ||--o{ ORDERS : "delivered to"
+    ORDERS ||--o{ ORDER_ITEMS : contains
+    MENU_ITEMS ||--o{ ORDER_ITEMS : "referenced by"
+    GUESTS ||--o{ RESTAURANT_RESERVATIONS : books
+    MENU_ITEMS }o--|| KITCHEN_CAPACITY : "consumes prep hours from"
+
+    MENU_ITEMS {
+        uuid id PK
+        text name
+        text description
+        text category
+        numeric price
+        text dietary_tags
+        bool age_restricted
+        numeric prep_hours_per_100_pax
+        time available_start_time
+        time available_end_time
+        bool is_active
+    }
+    ORDERS {
+        uuid id PK
+        uuid guest_id FK
+        text reservation_id FK
+        uuid room_id FK
+        text order_type
+        text status
+        text source
+        timestamp placed_at
+        timestamp fulfilled_at
+        numeric total_amount
+    }
+    ORDER_ITEMS {
+        uuid id PK
+        uuid order_id FK
+        uuid menu_item_id FK
+        int quantity
+        numeric unit_price_at_order
+        jsonb modifiers
+        text special_instructions
+    }
+    RESTAURANT_RESERVATIONS {
+        uuid id PK
+        uuid guest_id FK
+        int party_size
+        timestamp reservation_time
+        text occasion_flag
+        text status
+    }
+    KITCHEN_CAPACITY {
+        date date PK
+        text shift PK
+        numeric max_prep_hours
+        numeric allocated_prep_hours
+        int max_banquet_meals
+        int allocated_banquet_meals
+    }
+    </div>
+    <div class="diagram-caption"><code>KITCHEN_CAPACITY</code> is checked, not joined, at order time — feasibility math against <code>prep_hours_per_100_pax</code>, per Addendum J.</div>
+  </div>
+  <div class="why"><strong>Revised after review.</strong> Added <code>modifiers</code> (jsonb) to <code>ORDER_ITEMS</code> — real kitchen tickets need structured modifiers ("medium rare," "no onions," "oat milk"), not just a free-text instructions field the kitchen has to parse by hand each time.</div>
+
+  <h3>5 — Business events</h3>
+  <div class="diagram">
+    <div class="mermaid">
+erDiagram
+    COMPANIES ||--o{ EVENT_BOOKINGS : organizes
+    GUESTS ||--o{ EVENT_BOOKINGS : organizes
+    EVENT_PACKAGES ||--o{ EVENT_BOOKINGS : "may template"
+    EVENT_BOOKINGS ||--o{ EVENT_ALLOCATIONS : "composed of"
+    EVENT_ALLOCATIONS }o--o| EVENT_SPACES : "may reference"
+    EVENT_ALLOCATIONS }o--o| ROOMS : "may reference"
+    EVENT_ALLOCATIONS }o--o| MENU_ITEMS : "may reference"
+    EVENT_ALLOCATIONS }o--o| EQUIPMENT_INVENTORY : "may reference"
+    EVENT_ALLOCATIONS ||--o| VENDOR_PURCHASE_ORDERS : "may generate"
+
+    COMPANIES {
+        uuid id PK
+        text name
+        text billing_contact_email
+        text billing_type
+    }
+    EVENT_SPACES {
+        uuid id PK
+        text name
+        text type
+        int capacity
+        numeric base_rate
+        text av_equipment
+        int turnaround_minutes
+    }
+    EVENT_BOOKINGS {
+        uuid id PK
+        uuid company_id FK
+        uuid organizer_guest_id FK
+        text event_name
+        text event_type
+        timestamp start_datetime
+        timestamp end_datetime
+        int pax_count
+        text status
+        numeric quoted_price
+        text risk_score
+    }
+    EVENT_ALLOCATIONS {
+        uuid id PK
+        uuid event_booking_id FK
+        text resource_type
+        uuid resource_ref
+        numeric quantity
+        text sourcing
+        numeric cost
+    }
+    EQUIPMENT_INVENTORY {
+        uuid id PK
+        text name
+        text category
+        int total_quantity
+        numeric unit_rental_cost
+    }
+    VENDOR_PURCHASE_ORDERS {
+        uuid id PK
+        uuid event_booking_id FK
+        text vendor_name
+        text category
+        text line_items
+        numeric total_amount
+        text status
+    }
+    EVENT_PACKAGES {
+        uuid id PK
+        text name
+        text category
+        text description
+        numeric price
+        text template_allocations
+    }
+    </div>
+    <div class="diagram-caption">This is the diagram that proves "no fixed shape per event" (Addendum J): a private dinner has two or three <code>EVENT_ALLOCATIONS</code> rows, a wedding might have ten — same schema, no special-casing either direction.</div>
+  </div>
+  <div class="why"><strong>Revised after review.</strong> <code>organizer_ref</code> (a vague single field trying to mean either a guest or a company) is split into <code>company_id</code> and <code>organizer_guest_id</code> — exactly one is populated depending on who's actually booking, which is also what makes the company-billing case (Addendum G) queryable directly instead of requiring a runtime type check on a generic reference. <code>status</code> should track the real sales pipeline rather than the narrower approval-queue states alone: <code>draft</code> → <code>pending_approval</code> → <code>confirmed</code> → <code>completed</code>, with <code>rejected</code>/<code>cancelled</code> as exits at any point before <code>completed</code>. <code>pending_approval</code> is still the exact state the role-switch demo (Addendum J) watches for — this just gives it real neighbors before and after.</div>
+
+  <h3>6 — Experiences</h3>
+  <div class="diagram">
+    <div class="mermaid">
+erDiagram
+    GUESTS ||--o{ EXPERIENCE_BOOKINGS : books
+    EXPERIENCES ||--o{ EXPERIENCE_BOOKINGS : "booked as"
+
+    EXPERIENCES {
+        uuid id PK
+        text name
+        text category
+        text description
+        numeric price
+        int duration_minutes
+        text provider
+        text booking_type
+    }
+    EXPERIENCE_BOOKINGS {
+        uuid id PK
+        uuid experience_id FK
+        uuid guest_id FK
+        timestamp scheduled_at
+        int party_size
+        text status
+    }
+    </div>
+    <div class="diagram-caption">Same shape as <code>RESTAURANT_RESERVATIONS</code> above, deliberately — a booking against a resource with a time and a capacity, reused rather than reinvented (Addendum H).</div>
+  </div>
+
+  <h3>Standalone tables — no foreign-key relationships</h3>
+  <table>
+    <tr><th>Table</th><th>Key fields</th><th>Why it's standalone</th></tr>
+    <tr><td><code>policy_chunks</code></td><td><code>source_file</code>, <code>content</code>, <code>embedding vector(1024)</code></td><td>Retrieved by similarity search, not joined — see Section 5</td></tr>
+    <tr><td><code>conversation_costs</code></td><td><code>id</code>, <code>session_id</code>, <code>agent_name</code>, <code>tokens_in</code>, <code>tokens_out</code>, <code>cost_usd</code>, <code>created_at</code></td><td>Observability log (Milestone 6), not part of the operational graph</td></tr>
+  </table>
+</section>
+
+<section id="knowledge">
+  <h2>5. Knowledge representation &amp; embeddings</h2>
+  <p>Policy knowledge lives as plain markdown files, one per topic, deliberately kept short and single-topic — which is what makes whole-file chunking sufficient today (no paragraph-level splitting logic needed). Ingestion embeds each file with Voyage AI's <code>voyage-3.5-lite</code> model using <code>input_type="document"</code>, producing a 1024-dimension vector stored in <code>policy_chunks.embedding vector(1024)</code>.</p>
+  <p>At query time, the guest's question is embedded with <code>input_type="query"</code> instead — Voyage's models are trained to treat "things meant to be searched over" and "things searching with" differently, and using the wrong one quietly degrades retrieval quality without ever throwing an error, so this distinction is easy to get wrong silently. Retrieval itself runs a cosine-distance nearest-neighbor search using pgvector's <code>&lt;=&gt;</code> operator, requiring the query parameter to be cast to <code>::vector</code> explicitly — Postgres can't infer the type from a bare array inside an <code>ORDER BY</code>. The top matches return to Claude as tool output; Claude, not the retrieval step, decides what to actually tell the guest.</p>
+  <p><strong>Why Voyage and not Claude directly:</strong> Claude doesn't produce embeddings itself — Anthropic's own documentation points to Voyage as the recommended embeddings partner, so this two-vendor pattern is normal, not a workaround.</p>
+  <p><strong>Why 1024 dimensions:</strong> a reasonable middle setting among Voyage's selectable output sizes (256/512/1024/2048), trading nuance against storage and speed. Whatever size is chosen has to match the pgvector column definition exactly, or inserts fail on a dimension mismatch.</p>
+  <div class="why">Forward-looking: this proposal alone adds several more policy documents (event vendor policy, event deposit/cancellation terms, pool/gym) on top of the existing six. Whole-file chunking stays appropriate as long as each document stays short and single-topic, which has held so far. If any future document grows long or covers multiple sub-topics, it should be split into semantic chunks before ingestion rather than embedded as one large block — worth deciding <em>before</em> a document gets long enough that retrieval quality quietly degrades, not after.</div>
+</section>
+
+<section id="tradeoffs">
+  <h2>6. Architecture choices &amp; trade-offs</h2>
+  <table>
+    <tr><th>Decision</th><th>Choice made</th><th>Trade-off / alternative considered</th></tr>
+    <tr><td>Agent framework</td><td>Google ADK + Claude via LiteLLM</td><td>LangChain/LangGraph has a larger ecosystem and more job-market recognition; ADK was chosen for cross-vendor flexibility and because it was the explicit learning goal here, not because it's objectively superior.</td></tr>
+    <tr><td>Retrieval pattern</td><td>Agentic RAG — the model decides per-turn whether/what to retrieve</td><td>Simpler alternative is naive/monolithic RAG (always retrieve-then-generate); rejected because a concierge genuinely needs conditional retrieval — a greeting shouldn't trigger a policy search.</td></tr>
+    <tr><td>Agent topology</td><td>Three ADK sub-agents (<code>concierge_agent</code>, <code>ops_agent</code>, <code>sales_agent</code>) — not a wider multi-agent swarm</td><td>A single monolithic agent would be simpler to build and debug; three exist because guest chat, staff task routing, and event sales/approval are genuinely different reasoning modes under different trust boundaries. Most of the system's domain richness (billing, F&amp;B, rooms) stays inside these three as <em>tools</em>, not additional agents — see the note below the table.</td></tr>
+    <tr><td>Data engine</td><td>Single Postgres + pgvector</td><td>Covered in Section 4 — a dedicated vector database would scale further but adds real operational cost this project's corpus size doesn't justify.</td></tr>
+    <tr><td>External systems</td><td>Mocked adapters (PMS/POS/ERP/WFM, sensors, locks) behind one adapter boundary</td><td>Chosen for reproducibility and portability without enterprise contracts or credentials. Real cost: mocks won't surface the quirks a production integration would hit — auth flows, rate limits, inconsistent vendor payloads. Documented as "would integrate via X in production," not claimed as equivalent.</td></tr>
+    <tr><td>Execution model</td><td>Synchronous tool calls — the agent waits and responds in one request</td><td>A production system with genuinely decoupled departments (kitchen, housekeeping acting independently) would likely move to an event/message-queue architecture; documented as a future scaling path, not built now, since demo scale doesn't need it.</td></tr>
+    <tr><td>Process state</td><td>Stateless agent processes, session state in the database</td><td>The only model that supports horizontal scaling later without a redesign — though current code (R3) doesn't yet fully honor this, holding one shared connection at import time.</td></tr>
+    <tr><td>Resilience testing</td><td>Client-side kill switch (Addendum D)</td><td>Safer and more demoable than actually taking down infrastructure. Real trade-off: it proves the client's degraded-mode logic works, not a true chaos-engineering test of the database or network layer itself.</td></tr>
+  </table>
+  <div class="why"><strong>Why not one agent per domain (billing, F&amp;B, rooms, events)?</strong> Agent count should track reasoning mode and trust boundary, not data domain. Answering a guest's food question and a guest's billing question is the same reasoning mode — a conversational agent picking the right tool — so both stay inside <code>concierge_agent</code> as separate tools rather than separate agents. Splitting further than that adds cost and a documented failure mode (context loss and redundant work at agent-to-agent handoffs) without buying anything, since the event feasibility math (Addendum J) is already deterministic simulation, not agentic judgment.<br/><br/>
+  The one place this project did add a third agent: event feasibility, yield/displacement pricing, quote drafting, and the approval-queue interaction were originally scoped under <code>ops_agent</code> (Addendum J), but that's a financial/sales judgment task under a distinct approval authority (Sales Manager / Management), not routine task routing — bundling it with housekeeping/maintenance dispatch would have overloaded one agent's toolset with unrelated reasoning, which is also the practical ceiling that should trigger a split: too many disparate tools in one agent's toolbelt degrades tool-selection reliability. <code>sales_agent</code> now owns that pipeline; <code>ops_agent</code> keeps its original Milestone 4 scope of intake, routing, monitoring, and compensation. <code>run_daily_closeout</code> was pulled out entirely — it's a scheduled batch job, not something any agent should be "deciding" to run; Accounting &amp; Finance just reads its results.</div>
+</section>
+
+<section id="human-loop">
+  <h2>7. Human-in-the-loop</h2>
+  <p>Consolidated from the Tier 1/2/3 risk framework used throughout design — Tier 1 is read-only and fully autonomous, Tier 2 writes but stays logged and reversible, Tier 3 touches money, dates, or real bookings and never executes without a human confirming first.</p>
+  <table>
+    <tr><th>Action</th><th>Who confirms</th><th>Why</th></tr>
+    <tr><td>Identity verification beyond booking reference + surname</td><td>Stubbed for the demo; a real deployment would need an actual document/biometric check or a front-desk visual ID confirmation</td><td>Booking reference + surname alone isn't real identity proof</td></tr>
+    <tr><td>Modify or cancel a booking</td><td>Human confirms before the change commits</td><td>Touches dates and potentially a cancellation fee</td></tr>
+    <tr><td>Payment capture</td><td>Staff/management sign-off before the (test-mode) Stripe charge completes</td><td>Money should never move on an LLM's unattended decision</td></tr>
+    <tr><td>Kitchen order fulfillment</td><td>Kitchen staff always physically fulfills it</td><td>The agent creates the ticket; it never claims to cook or deliver anything itself</td></tr>
+    <tr><td>Compensation above a threshold</td><td>Management approves; small comps may be pre-approved for any staff member</td><td>Consistent, auditable remedies instead of ad hoc discretion at unlimited size</td></tr>
+    <tr><td>Daily closeout</td><td>Accounting &amp; Finance (the "night auditor" role) reviews before it's considered final</td><td>The computation runs automatically; a human still owns the actual close</td></tr>
+    <tr><td>Event quote approval, edit, or rejection</td><td>Sales/Events Manager or Management, via the approval queue</td><td>A computed quote is provisional until a human with pricing authority signs off</td></tr>
+    <tr><td>Closing or removing a staff task</td><td>Requires a higher clearance tier than adding one</td><td>Asymmetric permission — easy to make something more visible, harder to make it less so</td></tr>
+    <tr><td>Degraded-mode recovery</td><td>Queued writes replay automatically; the incident itself is logged for human postmortem review</td><td>Automation handles the mechanical recovery; a person still needs to understand why it happened</td></tr>
+  </table>
+  <div class="why"><strong>Implementation mechanism — hybrid, decided per case.</strong> ADK's native Tool Confirmation feature (<code>FunctionTool(require_confirmation=True)</code>) has a real constraint: it doesn't support <code>DatabaseSessionService</code>, which conflicts with this project's "session state lives in the database" principle for any tool using it as-is. Rather than pick one rule for every Tier 3 action, the mechanism is chosen per case: simple yes/no confirmations (modify/cancel booking, payment capture) use ADK's native flow directly. Anything needing a structured, editable response before it proceeds — event quote approval/edit/reject being the clear case, since a Sales Manager adjusts numbers rather than just approving — uses a hand-built <code>pending_approvals</code> table and re-prompt flow instead, keeping DB-backed session state intact for that path. See Section 11 for the full tool-calling conventions this implies.</div>
+</section>
+
+<section id="schema-refactor">
+  <h2>8. Foundational schema refactor (required before Phase 1)</h2>
+  <div class="why">This wasn't explicit in any single design addendum, but every downstream tool assumes it exists: <code>booking_reference</code> is used throughout (check-in, checkout, modify/cancel, group bookings) but there is currently no table that owns it. The Kaggle-derived <code>guests</code> table conflates guest identity with a single stay's attributes into one flat row — it has no concept of a guest having more than one reservation.</div>
+  <p>
+    Proposed split: <code>guests</code> keeps identity fields only (name, email, country — plus <code>guest_notes</code>
+    from Addendum F for allergies/preferences). A new <code>reservations</code> table becomes the actual home for
+    <code>booking_reference</code> (primary key), <code>guest_id</code> (FK), <code>room_type_id</code>,
+    <code>check_in_date</code>, <code>check_out_date</code>, <code>adr</code>, <code>status</code>
+    (confirmed/checked_in/checked_out/cancelled), and a nullable <code>group_booking_id</code> pointing at
+    <code>event_bookings</code> for the conference-room-block case in Addendum G. The existing 300 synthetic rows
+    migrate cleanly — one reservation per existing guest row — so no seed data is lost, it's just correctly normalized.
+  </p>
+  <p>Every tool signature already written in the design (<code>check_in_guest(booking_reference)</code>, <code>create_booking(...)</code>, <code>modify_booking(booking_reference, ...)</code>) depends on this table existing. It's listed here rather than folded silently into Phase 1 because it's easy to miss — nothing "new" was ever said about it, it was just assumed.</p>
+</section>
+
+<section id="phases">
+  <h2>9. Phased implementation plan</h2>
+  <p>Ordered per the dependency chain established during design — each phase lists what ships and what it depends on.</p>
+
+  <details class="filecard" open>
+    <summary><span class="phase-num">0</span> Foundation: fix known bugs, add schema/deps <span class="tag">prerequisite — strict blocking gate</span></summary>
+    <div class="body">
+      <div class="why"><strong>This is a hard gate, not a suggestion.</strong> No Phase 1 or later work starts until Phase 0 is done and verified. Every subsequent phase's tools assume a working guest lookup, a committed schema to migrate against, and a <code>reservations</code> table that owns <code>booking_reference</code> — building on top of any of these missing is rework, not progress. "Done" means: R1's fix passes a manual test (a guest-specific question no longer crashes), R2's access check is in place, <code>requirements.txt</code>/<code>pyproject.toml</code> is committed and a clean checkout installs from it, the migrations in Section 17.2 are applied to a fresh Supabase project successfully, and the 300 existing guest rows have migrated into <code>guests</code> + <code>reservations</code> with zero data loss (row-count parity checked, not assumed).</div>
+      <ul>
+        <li>Fix R1 (<code>lookup_guest_profile</code> bug, verbatim in Section 2) and add basic access control for R2</li>
+        <li>Commit a dependency manifest (<code>requirements.txt</code> or <code>pyproject.toml</code>) — closes R4</li>
+        <li>Commit the database schema as versioned migrations rather than living only in Supabase — closes R5 (see Section 17.2 for the actual migration files)</li>
+        <li>Build the <code>reservations</code> split described in Section 4 and Section 8</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="filecard">
+    <summary><span class="phase-num">1</span> Room &amp; inventory foundation <span class="tag">Addendum A</span></summary>
+    <div class="body">
+      <ul>
+        <li><code>room_types</code>, <code>rooms</code> (floor, view, occupancy + housekeeping status as two independent axes), feature-tag table (view/amenities/accessible/smoking)</li>
+        <li><code>keycards</code>, <code>room_sensor_events</code>, <code>rooms.energy_mode</code> — simulated sensor/lock adapter</li>
+        <li>Single-property scope confirmed; the Kaggle <code>hotel</code> column is dropped</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="filecard">
+    <summary><span class="phase-num">2</span> Check-in, kiosk mode &amp; guest lifecycle <span class="tag">Milestone 2 + Addendum E</span></summary>
+    <div class="body">
+      <ul>
+        <li><code>verify_guest_identity</code> (booking reference + surname, stubbed ID-check sub-step), <code>check_in_guest</code>, <code>check_out_guest</code></li>
+        <li><code>create_booking</code>, <code>modify_booking</code>/<code>cancel_booking</code> (Tier 3, confirmation-gated), <code>request_human_handoff</code></li>
+        <li>Kiosk mode is a deployment context, not a detected signal — no queue-sensor tool needed</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="filecard">
+    <summary><span class="phase-num">3</span> Resilience &amp; kill switch <span class="tag">Addendum D</span></summary>
+    <div class="body">
+      <ul>
+        <li>Local cache snapshot (arrivals, in-house list, room status), refreshed on a schedule</li>
+        <li>Write-ahead queue for check-ins/orders/charges when the live DB is unreachable, replayed on reconnect</li>
+        <li>Client-side network kill switch for live demo; incident log for postmortems</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="filecard">
+    <summary><span class="phase-num">4</span> Staff operations, departments &amp; continuity <span class="tag">Milestone 4 + Addendum F</span></summary>
+    <div class="body">
+      <ul>
+        <li><code>staff_tasks</code> (request model): department tags + visibility tier, asymmetric add/remove permission</li>
+        <li>Intake classification (free text → structured request), staleness monitoring, compensation suggestions</li>
+        <li><code>staff</code> table (clearance_tier, title, department links), the seven finalized departments</li>
+        <li><code>guest_notes</code> — continuity layer so allergies/preferences reach downstream tools automatically</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="filecard">
+    <summary><span class="phase-num">5</span> Ordering, F&amp;B &amp; billing <span class="tag">Milestone 3 + Addendum B + Addendum C</span></summary>
+    <div class="body">
+      <ul>
+        <li><code>menu_items</code> (incl. age-restricted flag), <code>orders</code>, <code>order_items</code>, <code>restaurant_reservations</code></li>
+        <li><code>guest_bills</code>, <code>bill_items</code>, <code>payments</code> (Stripe test mode, confirmation-gated), <code>daily_closeouts</code></li>
+        <li>Staff proactive dispatch reuses the <code>orders</code> table — no new mechanism</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="filecard">
+    <summary><span class="phase-num">6</span> Multi-agent split &amp; dashboard <span class="tag">Milestone 5</span></summary>
+    <div class="body">
+      <ul>
+        <li>Split into <code>concierge_agent</code> / <code>ops_agent</code> as ADK <code>sub_agents</code> (<code>sales_agent</code> added in Phase 7, alongside the event/sales domain it owns — see §6 for why)</li>
+        <li>Staff dashboard with the role-selector (no full auth — see Section 11), department/tier-filtered task view</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="filecard">
+    <summary><span class="phase-num">7</span> Business events, experiences &amp; dynamic pricing <span class="tag">Addenda G, H, I, J</span></summary>
+    <div class="body">
+      <ul>
+        <li><code>event_spaces</code>, <code>event_bookings</code>, <code>event_allocations</code> (flexible line items — no fixed shape per event)</li>
+        <li><code>equipment_inventory</code>, <code>vendor_purchase_orders</code> (generalized PO mock), <code>kitchen_capacity</code>, <code>event_packages</code></li>
+        <li><code>experiences</code>/<code>experience_bookings</code> (spa/pool/gym/tours), <code>rate_calendar</code> for rooms and event spaces</li>
+        <li>Inquiry classification (FAQ vs. lookup vs. package vs. site-visit vs. full RFP pipeline) before any feasibility simulation runs</li>
+        <li><code>sales_agent</code> added here as a third ADK <code>sub_agent</code> — feasibility, yield/quote generation, and approval carry a distinct trust boundary (Sales Manager/Management) from routine ops routing</li>
+        <li>Approval queue — the role-switch demo moment (submit as guest, approve as Sales Manager/Management)</li>
+      </ul>
+    </div>
+  </details>
+
+  <details class="filecard">
+    <summary><span class="phase-num">8</span> Cost tracking, eval, ROI <span class="tag">Milestone 6</span></summary>
+    <div class="body">
+      <ul>
+        <li>Token/cost logging per exchange, rolled up into cost-per-interaction</li>
+        <li>Fixed eval suite (15-20 conversations) via ADK's Evaluation module</li>
+        <li>ROI projection tile against an assumed human-handling cost</li>
+      </ul>
+      <div class="why"><strong>Acceptance criteria for the eval suite — not just "15-20 conversations exist."</strong> Scenarios are split across five categories, not picked ad hoc: (1) simple Tier-1 lookups (policy question, guest profile) — target 100% pass, these have one correct answer; (2) Tier-2 writes (place an order, book a table) — target ≥90% pass, judged on both the right tool being called and the right arguments; (3) Tier-3 confirmation-gated actions (cancel a booking, process a payment) — target 100% pass on <em>never executing without confirmation</em>, since this is a safety property, not a quality one, plus ≥90% on completing correctly once confirmed; (4) multi-turn handoffs between agents (guest submits an event inquiry → <code>sales_agent</code> generates a quote → staff approves) — target ≥85% pass, the lowest bar deliberately, since this is the newest and most failure-prone path (§6); (5) adversarial/edge cases (guessed guest IDs per R2, ambiguous requests, a guest asking for something Tier 3 without going through the confirmation flow) — target 100% pass on refusing/escalating correctly. Judged by a fixed rubric per scenario (expected tool calls + expected final-answer content), not free-form LLM-as-judge scoring alone — free-form judging is noted as a known limitation to revisit if the suite grows past this fixed set.</div>
+    </div>
+  </details>
+
+  <details class="filecard">
+    <summary><span class="phase-num">9</span> Voice <span class="tag">future iteration</span></summary>
+    <div class="body"><p>Same agents and tools, new input/output modality. Not started until the text flows in Phases 2-3 are solid.</p></div>
+  </details>
+</section>
+
+<section id="data-model">
+  <h2>10. Data model catalogue</h2>
+  <p class="cite">Grouped by domain. Purpose and key fields only — full DDL is a Phase 0 deliverable (Section 4), not reproduced here.</p>
+
+  <h3>Identity, rooms &amp; access</h3>
+  <table>
+    <tr><th>Table</th><th>Purpose</th></tr>
+    <tr><td><code>guests</code></td><td>Identity only, post-refactor — name, contact, <code>stripe_customer_id</code>, and small indexed <code>accessibility_flags</code>/<code>dietary_flags</code> arrays for automatable checks (Section 4)</td></tr>
+    <tr><td><code>reservations</code></td><td>One row per stay; owns <code>booking_reference</code></td></tr>
+    <tr><td><code>room_types</code> / <code>rooms</code></td><td>Bookable inventory; occupancy + housekeeping status as independent axes</td></tr>
+    <tr><td><code>keycards</code></td><td>Issued at check-in, revoked at checkout, provisioned from the reservation</td></tr>
+    <tr><td><code>room_sensor_events</code></td><td>Simulated PIR/door-contact feed driving energy mode + housekeeping dispatch</td></tr>
+  </table>
+
+  <h3>Guest continuity &amp; billing</h3>
+  <table>
+    <tr><th>Table</th><th>Purpose</th></tr>
+    <tr><td><code>guest_notes</code></td><td>Allergy/dietary/room-preference/accessibility notes, surfaced automatically to downstream tools</td></tr>
+    <tr><td><code>guest_bills</code></td><td>Header record per stay ("folio"); in-house vs. company billing; <code>folio_number</code> supports split billing (e.g. room rate to corporate, incidentals to guest)</td></tr>
+    <tr><td><code>bill_items</code></td><td>Individual charges, with business date + accounting code; append-only — corrections post as new offsetting rows, never edited in place</td></tr>
+    <tr><td><code>payments</code></td><td>Tokenized payment records — auth hold at booking, capture at checkout</td></tr>
+    <tr><td><code>daily_closeouts</code></td><td>Scheduled function; closes the operating day, posts room charges, rolls the business date</td></tr>
+    <tr><td><code>rate_calendar</code></td><td>Per-date pricing for room types and event spaces (demand/seasonal/occupancy multipliers)</td></tr>
+  </table>
+
+  <h3>Operations / requests</h3>
+  <table>
+    <tr><th>Table</th><th>Purpose</th></tr>
+    <tr><td><code>staff_tasks</code></td><td>Universal request model — department tags + visibility tier, not a chat thread; targets a <code>reservation_id</code>, a <code>room_id</code>, or free-text <code>location_text</code> independently, with <code>due_at</code>/<code>acknowledged_at</code>/<code>completed_at</code> driving staleness monitoring</td></tr>
+    <tr><td><code>staff</code></td><td>id, name, email, clearance_tier, title, status</td></tr>
+    <tr><td><code>staff_departments</code></td><td>Many-to-many — a staff member can cover more than one department</td></tr>
+  </table>
+
+  <h3>Food &amp; beverage</h3>
+  <table>
+    <tr><th>Table</th><th>Purpose</th></tr>
+    <tr><td><code>menu_items</code></td><td>Shared catalog for room service, restaurant, and events; age-restricted flag</td></tr>
+    <tr><td><code>orders</code> / <code>order_items</code></td><td>Guest-placed or staff-dispatched; snapshot pricing per line item</td></tr>
+    <tr><td><code>restaurant_reservations</code></td><td>Table bookings, with occasion flag for proactive upsell</td></tr>
+    <tr><td><code>kitchen_capacity</code></td><td>Prep-hour and meal-volume limits per date/shift — feasibility check for large catering orders</td></tr>
+  </table>
+
+  <h3>Business events &amp; experiences</h3>
+  <table>
+    <tr><th>Table</th><th>Purpose</th></tr>
+    <tr><td><code>event_spaces</code></td><td>Meeting rooms, ballrooms, boardrooms — bookable like guest rooms</td></tr>
+    <tr><td><code>companies</code></td><td>Corporate accounts — organizes an event or holds a company-billed reservation</td></tr>
+    <tr><td><code>event_bookings</code></td><td>One row per event; no fixed resource shape; <code>company_id</code>/<code>organizer_guest_id</code> split (exactly one populated); status tracks the real sales pipeline (draft → pending_approval → confirmed → completed, with reject/cancel exits)</td></tr>
+    <tr><td><code>event_allocations</code></td><td>Flexible line items — the mechanism that makes "no fixed shape" work</td></tr>
+    <tr><td><code>equipment_inventory</code></td><td>House-owned AV/furniture/staging gear</td></tr>
+    <tr><td><code>vendor_purchase_orders</code></td><td>Generalized simulated PO — decor, entertainment, catering supply, AV rental</td></tr>
+    <tr><td><code>event_packages</code></td><td>Pre-built, pre-priced bundles (template allocations)</td></tr>
+    <tr><td><code>experiences</code> / <code>experience_bookings</code></td><td>Spa, pool, gym, tours — internal or external-partner sourced</td></tr>
+  </table>
+
+  <h3>Resilience &amp; observability</h3>
+  <table>
+    <tr><th>Table</th><th>Purpose</th></tr>
+    <tr><td><code>local_cache_snapshot</code></td><td>Client-side snapshot for offline reads (schema in Section 13)</td></tr>
+    <tr><td><code>write_ahead_queue</code></td><td>Client-side pending writes, replayed on reconnect via idempotency key (schema in Section 13)</td></tr>
+    <tr><td><code>incident_log</code></td><td>Degraded-mode entry/exit events, for postmortems (schema in Section 13)</td></tr>
+    <tr><td><code>conversation_costs</code></td><td>Token/cost logging per exchange (Milestone 6)</td></tr>
+  </table>
+</section>
+
+<section id="tools">
+  <h2>11. Tool &amp; agent inventory (risk-tiered)</h2>
+  <p class="cite">Tier 1 = read-only, fully autonomous. Tier 2 = writes, logged and reversible. Tier 3 = touches money/dates/real bookings, human-confirmed before it executes.</p>
+
+  <p><strong>Tool-calling conventions.</strong> ADK generates the JSON schema each tool exposes to Claude directly from the Python function's type hints and docstring — there's no hand-written schema layer, which means naming and docstring quality is a real reliability lever, not documentation polish. Three conventions apply across every tool listed below:</p>
+  <ul>
+    <li><strong>Return-value contract.</strong> Every tool returns a consistent <code>{status, data, error}</code> shape rather than raising exceptions or returning ad hoc structures — chosen specifically because R1's failure mode (a missing method call and an invalid cast, both silent until runtime) is exactly what an inconsistent contract lets slip through. A tool that fails returns a structured error the model can react to, not a stack trace.</li>
+    <li><strong>Idempotency.</strong> Every Tier 2/3 write tool takes an idempotency key parameter, reusing the same key the client-side write-ahead queue (Addendum D) already generates — so a queued write that replays after a reconnect can't double-charge or double-book.</li>
+    <li><strong>Confirmation mechanism — hybrid, not uniform.</strong> Per Section 7: simple yes/no Tier 3 actions use ADK's native <code>require_confirmation</code>; anything needing an editable structured response (event quote approval) uses a hand-built <code>pending_approvals</code> table instead, since ADK's native confirmation flow doesn't support <code>DatabaseSessionService</code> and this project keeps session state in the database.</li>
+    <li><strong>Tool granularity.</strong> Narrow, single-purpose tools (<code>modify_booking</code>, <code>cancel_booking</code>, <code>create_booking</code> as three tools rather than one tool with an <code>action</code> enum) — more tools to maintain, but each has an unambiguous name and docstring for the model to match against, which matters more as <code>concierge_agent</code>'s tool count grows.</li>
+  </ul>
+  <p class="cite">A fourth category of tool call isn't in the tables below: agent handoff itself. <code>transfer_to_agent</code>/<code>AgentTool</code> between the three agents is implemented as a tool call in ADK's schema, same mechanism as everything else.</p>
+
+  <h3><code>concierge_agent</code> — guest-facing</h3>
+  <table>
+    <tr><th>Tool</th><th>Tier</th><th>Status</th></tr>
+    <tr><td><code>retrieve_hotel_policy</code></td><td><span class="badge t1">T1</span></td><td>Done</td></tr>
+    <tr><td><code>verify_guest_identity</code></td><td><span class="badge t1">T1</span></td><td>Done — replaces <code>lookup_guest_profile</code> entirely (R1/R2 fixed by removal, not patch)</td></tr>
+    <tr><td><code>check_in_guest</code> / <code>check_out_guest</code></td><td><span class="badge t2">T2</span></td><td>Done</td></tr>
+    <tr><td><code>list_room_types</code></td><td><span class="badge t1">T1</span></td><td>New — added 2026-08-05. Returns every room type's <code>bed_config</code>/<code>max_occupancy</code>/<code>sq_meters</code>/features plus real per-date availability for the requested range, reusing T021's counting logic as a shared helper (own task: T017). Resolves guest requests like "a suite with a couch" via the model's own reasoning over a small returned list, not a structured filter query — closes the gap between "guest describes what they want" and <code>create_booking</code>'s <code>room_type_id</code> input</td></tr>
+    <tr><td><code>search_guest_profiles</code></td><td><span class="badge t1">T1</span></td><td>New — added 2026-08-12 (own task: T018). Read-only match on <code>email</code>/<code>phone</code>/name against <code>guests</code>, returns up to 5 candidates. Runs before <code>create_guest_profile</code> in every booking flow, not just walk-ins — see Guest Profile Management why-note below</td></tr>
+    <tr><td><code>create_guest_profile</code></td><td><span class="badge t2">T2</span></td><td>New — added 2026-08-12 (own task: T019). Writes a new <code>guests</code> row when search finds no match</td></tr>
+    <tr><td><code>update_guest_profile</code></td><td><span class="badge t2">T2</span></td><td>New — added 2026-08-12 (own task: T020). Partial update to an existing profile's contact/name fields</td></tr>
+    <tr><td><code>create_booking</code></td><td><span class="badge t2">T2</span></td><td>Phase 2 — next (T021)</td></tr>
+    <tr><td><code>modify_booking</code> / <code>cancel_booking</code></td><td><span class="badge t3">T3</span></td><td>Phase 2</td></tr>
+    <tr><td><code>place_order</code> (room service / dine-in)</td><td><span class="badge t2">T2</span></td><td>Phase 5</td></tr>
+    <tr><td><code>book_restaurant_table</code></td><td><span class="badge t2">T2</span></td><td>Phase 5</td></tr>
+    <tr><td><code>book_experience</code></td><td><span class="badge t2">T2</span></td><td>Phase 7</td></tr>
+    <tr><td><code>submit_event_inquiry</code></td><td><span class="badge t1">T1</span> → escalates</td><td>Phase 7</td></tr>
+    <tr><td><code>process_payment</code></td><td><span class="badge t3">T3</span></td><td>Phase 5</td></tr>
+    <tr><td><code>request_human_handoff</code></td><td><span class="badge t1">T1</span></td><td>Phase 2</td></tr>
+  </table>
+  <div class="why"><p><strong>Guest Profile Management (revised 2026-08-12 — supersedes an earlier draft of this note).</strong> Reviewed against external industry sources: MobiDev's hotel-AI integration guide, Profitroom's product interview, an independent AutoGen-based hobby build, and — after direct pushback on the first pass — real-world PMS guest-profile behavior (Cloudbeds' match-confidence search, OPERA Cloud's profile merge rules). The first version of this note treated "walk-in support" as a staff-dashboard/Phase-6 problem and concluded there was nothing to fix yet. That was wrong, caught by checking the actual signatures: <code>create_booking</code> requires an existing <code>guest_id</code>, and <code>verify_guest_identity</code> requires an existing <code>booking_reference</code> — so no path existed anywhere in the design for a person with neither (a true walk-in, or a first-time online guest) to enter the system at all. That's not a Phase 6 gap; it's missing from this phase's own guest-lifecycle scope.</p>
+  <p>The fix follows the real hotel flow, not an ad hoc "register the walk-in" patch: a guest profile (<code>guests</code> — a <strong>Who</strong>, Principle II) and a stay (<code>reservations</code> — a <strong>Request</strong>) are separate primitives, and the standard sequence is always search-for-existing-profile before create-new, for every channel — online, phone, or a human at a desk — not something specific to walk-ins. <code>search_guest_profiles</code>/<code>create_guest_profile</code>/<code>update_guest_profile</code> are the resulting first-class trio, sitting ahead of <code>create_booking</code> rather than folded into it, so the Who/Request boundary and each tool's own idempotency contract stay intact. Deliberately declined as speculative for this phase: any scoring/confidence engine (Cloudbeds' 90%+ match confidence) or automatic merge (OPERA's merge rules) — <code>search_guest_profiles</code> returns candidates and leaves the match judgment to the model/guest conversation, the same pattern <code>list_room_types</code> already uses for "a suite with a couch." <code>verify_guest_identity</code> is unaffected and keeps its own separate job — confirming an identity against a <em>known</em> <code>booking_reference</code>, which a walk-in or new online guest doesn't have yet.</p>
+  <p>This also resolves MobiDev's cited failure mode ("an agent confirms a booking without seeing a recent walk-in") for the availability side specifically: since every channel resolves <code>guest_id</code> through the same two tools and then calls the same <code>create_booking</code> with the same live per-date availability check (T021's helper, shared with <code>list_room_types</code>/T017), there's one source of truth for both "who is this" and "is a room free" — not two paths that can drift out of sync. That single-source-of-truth property is worth preserving explicitly if Phase 6 ever gives staff a separate booking UI: it must call these same tools, not a parallel implementation.</p>
+  <p>Two other checks against the same sources came back as validation, not gaps: the Tier 1/2/3 confirmation gating (§7) already matches MobiDev's "start assistive → confirmation-gated → autonomous" best practice, and Profitroom's "transactional not just conversational" framing is already the point of <code>create_booking</code> writing real rows rather than just answering questions. Profitroom's "proactively suggest alternative dates when sold out" is a prompt-level behavior for <code>concierge_agent</code> (call <code>list_room_types</code> again with adjusted dates), not a new tool or schema change — noted here so it isn't lost, not scheduled as new work. The AutoGen build (single-purpose, single-shot report scripts per department, no shared tool-calling runtime, no persistence, no confirmation flow) wasn't a source of adopted ideas — it's a useful negative reference for how much this design already does that a "team of agents" demo doesn't: real risk tiering, a real schema behind every tool, and idempotent writes.</div>
+
+  <h3><code>ops_agent</code> — staff-facing, task routing &amp; monitoring</h3>
+  <table>
+    <tr><th>Tool</th><th>Tier</th><th>Status</th></tr>
+    <tr><td>Intake classification (free text → structured request)</td><td><span class="badge t1">T1</span></td><td>Phase 4</td></tr>
+    <tr><td>Stale-request monitoring</td><td><span class="badge t1">T1</span></td><td>Phase 4</td></tr>
+    <tr><td>Compensation suggestion</td><td><span class="badge t2">T2</span></td><td>Phase 4</td></tr>
+    <tr><td>Staff proactive item dispatch</td><td><span class="badge t2">T2</span></td><td>Phase 4/5</td></tr>
+  </table>
+
+  <h3><code>sales_agent</code> — staff-facing, event feasibility &amp; approval</h3>
+  <p class="cite">Split out from <code>ops_agent</code> — see §6. Financial/sales judgment under a distinct approval authority (Sales Manager / Management), not routine task routing.</p>
+  <table>
+    <tr><th>Tool</th><th>Tier</th><th>Status</th></tr>
+    <tr><td>Event feasibility + yield quote generation (invokes mocked PMS/POS/S&amp;C/ERP/WFM)</td><td><span class="badge t2">T2</span></td><td>Phase 7</td></tr>
+    <tr><td>Quote approve / edit / reject</td><td><span class="badge t3">T3</span></td><td>Phase 7</td></tr>
+  </table>
+
+  <p class="cite"><strong>Not an agent tool:</strong> <code>run_daily_closeout</code> runs as a scheduled batch job, not something an agent decides to invoke — Accounting &amp; Finance reads its results through the dashboard. (Phase 5.)</p>
+</section>
+
+<section id="departments">
+  <h2>12. Departments &amp; roles</h2>
+  <p>Seven finalized departments, grounded against a real hotel org-chart reference rather than assumed:</p>
+  <table>
+    <tr><th>Department</th><th>Owns</th></tr>
+    <tr><td>Front Office / Concierge</td><td>Check-in, kiosk mode, general requests, human-handoff escape hatch</td></tr>
+    <tr><td>Housekeeping</td><td>Cleaning, supplies, turnover</td></tr>
+    <tr><td>Food &amp; Beverage</td><td>Kitchen + restaurant merged (deliberately simplified from the real split)</td></tr>
+    <tr><td>Maintenance / Engineering</td><td>Repairs, HVAC, and by default AV/technical support for events (see Section 11)</td></tr>
+    <tr><td>Accounting &amp; Finance</td><td>Daily closeout — owned by the "night auditor" role specifically</td></tr>
+    <tr><td>Security</td><td>Keycard access log, door-sensor event review</td></tr>
+    <tr><td>Management</td><td>Approval / visibility-tier layer, not a task-receiving department</td></tr>
+  </table>
+  <p>IT was considered and deliberately excluded. Staff are modeled with a <code>clearance_tier</code> (what they can see/approve) and a separate <code>title</code> field (e.g. "Sales &amp; Events Manager"), so specific job titles exist without inventing an eighth department. Dashboard access is a simple role selector, not full authentication — see Section 11.</p>
+</section>
+
+<section id="resilience">
+  <h2>13. Resilience architecture</h2>
+  <div class="diagram">
+    <div class="mermaid">
+flowchart LR
+    classDef app fill:#dce7f5,stroke:#2f5f8f,stroke-width:1.5px,color:#22201d
+    classDef warn fill:#fdf3dc,stroke:#9a6a00,stroke-width:1.5px,color:#22201d
+    classDef db fill:#dcf0e3,stroke:#2f6f4e,stroke-width:1.5px,color:#22201d
+    classDef file fill:#ecdff5,stroke:#6b3fa0,stroke-width:1.5px,color:#22201d
+
+    Client["Client — browser / kiosk"]:::app
+    KillSwitch{{"Kill switch<br/><small>client-side network cutoff</small>"}}:::warn
+    LiveDB[("Live Supabase")]:::db
+    Cache[("Local cache<br/><small>last-synced snapshot</small>")]:::file
+    Queue[("Write-ahead queue")]:::file
+
+    Client -->|reads| KillSwitch
+    KillSwitch -->|network up| LiveDB
+    KillSwitch -->|network down| Cache
+    Client -->|writes| KillSwitch
+    KillSwitch -->|network down| Queue
+    Queue -->|replay on reconnect| LiveDB
+    </div>
+    <div class="diagram-caption">Modeled directly on the real hotel "grab-and-go" emergency pack + manual card imprinter pattern — see Addendum D.</div>
+  </div>
+  <p>Degradation ladder: FAQ/policy answers stay available with no database dependency at all; identity verification and status lookups fall back to cache; check-ins/orders/charges queue as provisional rather than failing; anything with no offline substitute (a live Stripe capture) queues as pending. Every degraded-mode window gets its own incident-log entry, separate from the transactions queued during it.</p>
+
+  <h3>Client-side tables (not in Supabase — these live on the terminal/browser)</h3>
+  <div class="why">These were described conceptually in the original addendum but never given an actual schema — worth making concrete, since "a local cache" and "a queue" are meaningless as implementation guidance without knowing their shape.</div>
+  <table>
+    <tr><th>Table</th><th>Key fields</th><th>Purpose</th></tr>
+    <tr><td><code>local_cache_snapshot</code></td><td><code>entity_type</code>, <code>entity_id</code>, <code>payload</code> (jsonb), <code>synced_at</code></td><td>Last-known-good copy of arrivals/in-house list/room status, refreshed on a schedule; reads fall back here when the live DB is unreachable, always labeled with <code>synced_at</code> so staff know if it's stale</td></tr>
+    <tr><td><code>write_ahead_queue</code></td><td><code>id</code>, <code>idempotency_key</code>, <code>operation_type</code>, <code>payload</code> (jsonb), <code>created_at</code>, <code>replayed_at</code></td><td>Pending writes (check-ins, orders, charges) captured when the live DB is unreachable; replayed against Supabase in <code>created_at</code> order once connectivity returns, using <code>idempotency_key</code> to guard against double-application on retry</td></tr>
+    <tr><td><code>incident_log</code></td><td><code>id</code>, <code>started_at</code>, <code>ended_at</code>, <code>trigger</code>, <code>writes_queued_count</code></td><td>One row per degraded-mode window — separate from the transactions queued during it, for the postmortem timeline</td></tr>
+  </table>
+</section>
+
+<section id="stack">
+  <h2>14. Technology stack — current + additions</h2>
+  <h3>Current (per <code>docs/mycheckpoint.html</code>)</h3>
+  <table>
+    <tr><th>Layer</th><th>Choice</th></tr>
+    <tr><td>Language</td><td>Python 3.14.4</td></tr>
+    <tr><td>Agent framework</td><td>google-adk 2.5.0</td></tr>
+    <tr><td>LLM routing</td><td>litellm 1.93.0</td></tr>
+    <tr><td>Model</td><td>Claude Haiku 4.5</td></tr>
+    <tr><td>Embeddings</td><td>Voyage AI, voyage-3.5-lite, 1024-dim</td></tr>
+    <tr><td>DB driver</td><td>psycopg 3.3.4</td></tr>
+    <tr><td>Vector store</td><td>Supabase Postgres + pgvector</td></tr>
+    <tr><td>Data wrangling / seeding</td><td>pandas, Faker</td></tr>
+  </table>
+  <h3>Additions needed</h3>
+  <table>
+    <tr><th>Need</th><th>Proposed choice</th><th>Phase</th></tr>
+    <tr><td>Payment sandbox</td><td>Stripe test mode via ADK's Stripe MCP</td><td>5</td></tr>
+    <tr><td>Confirmation gating</td><td>ADK <code>require_confirmation</code> / <code>needsApproval</code></td><td>5, 7</td></tr>
+    <tr><td>Scheduled jobs (daily closeout, cache refresh)</td><td>Simple cron / APScheduler — no new infra class needed</td><td>3, 5</td></tr>
+    <tr><td>Dashboard frontend</td><td>Next.js/React + Tailwind, into the existing empty <code>web/</code> placeholder — resolved, Section 15</td><td>6</td></tr>
+    <tr><td>Local cache/queue client</td><td>IndexedDB (browser) — resolved, Section 15; no native app anywhere in this design</td><td>3</td></tr>
+    <tr><td>Extended seed data</td><td>Faker, same pattern as existing guest data — rooms, menu, spa, 365-day rate calendar</td><td>1, 5, 7</td></tr>
+  </table>
+</section>
+
+<section id="decisions">
+  <h2>15. Open decisions requiring sign-off</h2>
+  <p class="cite">Resolved this pass are marked <span class="badge ok">Resolved</span> with rationale — see Section 17.1 for the full sign-off log. Everything else here is a genuine open item, not a blocker for Phase 0.</p>
+  <div class="card"><span class="badge ok">Resolved</span> <strong>Dashboard frontend framework.</strong> Next.js/React + Tailwind, into the existing empty <code>web/</code> placeholder. Chosen over a Python-only dashboard (Streamlit, etc.) specifically so API contracts get designed as real HTTP endpoints from Phase 6 onward, not assumed to run in-process with the agent.</div>
+  <div class="card"><span class="badge ok">Resolved</span> <strong>Offline storage (Phase 3).</strong> IndexedDB, not SQLite. Nothing in the design ever called for a native app — the kiosk is a browser locked into kiosk mode on a tablet, the dashboard is a web app, so the client-side cache/queue (Section 13) belongs in the browser, not a native filesystem. SQLite would only make sense if a native kiosk app got added later.</div>
+  <div class="card"><span class="badge ok">Resolved</span> <strong>Dashboard authentication.</strong> Simple role selector confirmed, not real login — consistent with the "keep it simple" instruction given repeatedly during design. Revisit only if the demo moves from local/screen-share to a link anyone can open unsupervised.</div>
+  <div class="card"><strong>AV/technical support department default.</strong> Assigned to Maintenance/Engineering by default during design (Addendum G) — not discussed as a locked decision.</div>
+  <div class="card"><strong>Food &amp; Beverage vs. Kitchen split.</strong> Merged into one department for routing simplicity — real hotels split them. Revisit if routing granularity becomes a real demo need.</div>
+  <div class="card"><strong>"Sales &amp; Events Manager."</strong> Modeled as a <code>title</code>, not a department — confirm this reads clearly on the dashboard rather than needing its own department lane.</div>
+  <div class="card"><strong>Deferred, not forgotten:</strong> structured loyalty system (left out — policy doc only), full workforce shift-compliance modeling (cost estimate only, no labor-law engine), data privacy/retention design (out of scope for the demo, one README line).</div>
+</section>
+
+<section id="risks">
+  <h2>16. Risks carried forward</h2>
+  <p>R1–R8 from <code>docs/mycheckpoint.html</code> remain open until addressed in Phase 0 (R1, R4, R5) or accepted as out-of-scope for the demo (R7 — no deployment config planned; R6 — tests arrive with Milestone 6's eval harness, not before). R3 (single shared DB connection) becomes directly relevant once Phase 3's resilience work begins, since the fallback/queue logic needs to reason about connection failure explicitly rather than assume it away.</p>
+</section>
+
+<section id="kickoff">
+  <h2>17. Kickoff package — from roadmap to ready-to-code</h2>
+  <p>Everything above this point is the design. This section is the handoff: the specific decisions and artifacts a PM, Lead Architect, Data Engineer, and Backend Lead need in hand before a developer opens an editor — not restated at design-narrative level, but as things that can be copy-pasted, run, or checked off.</p>
+
+  <h3>17.1 — Sign-off log</h3>
+  <p>Consolidated from Section 15. Three items needed a decision before API contracts, storage, and auth scope could be locked — all three are resolved, not left open:</p>
+  <table>
+    <tr><th>Decision</th><th>Owner</th><th>Resolution</th></tr>
+    <tr><td>Dashboard framework (<code>web/</code>)</td><td>PM &amp; Lead Architect</td><td><span class="badge ok">Resolved</span> Next.js/React + Tailwind. Chosen specifically so Phase 6 designs real HTTP API contracts, not an in-process Python dashboard.</td></tr>
+    <tr><td>Offline storage (Phase 3)</td><td>PM &amp; Lead Architect</td><td><span class="badge ok">Resolved</span> IndexedDB, not SQLite. The kiosk is a browser in kiosk mode and the dashboard is a web app — nothing in the design calls for a native app, so the client-side cache/write-ahead-queue (§13) belongs in the browser.</td></tr>
+    <tr><td>Dashboard auth</td><td>PM &amp; Lead Architect</td><td><span class="badge ok">Resolved</span> Simple role selector, not real token-based auth enforcing <code>clearance_tier</code>. Consistent with "keep it simple" for a demo run locally or screen-shared. Revisit only if the demo becomes a link anyone can open unsupervised.</td></tr>
+  </table>
+  <p class="cite">Remaining open items (AV/tech-support department default, F&amp;B/Kitchen split, Sales &amp; Events Manager placement, deferred scope) are listed in full in Section 15 — none of them block Phase 0.</p>
+
+  <h3>17.2 — Migration files</h3>
+  <p>Two migrations are written out below in full, not summarized, because they're the two that matter most: <code>001</code> closes R5 by committing what's actually live today (verbatim from Section 2), and <code>002</code> is the Phase 0 blocking refactor from Section 8. Every migration after these follows the same conventions — <code>uuid</code> surrogate keys with <code>gen_random_uuid()</code>, <code>ON DELETE RESTRICT</code> on FKs into identity/financial rows (a guest or a bill item should never silently vanish because something referencing it was deleted), <code>ON DELETE CASCADE</code> only on true child rows that have no meaning without their parent (<code>order_items</code>, <code>bill_items</code>, <code>room_features</code>), and <code>ON DELETE SET NULL</code> on optional targeting FKs (<code>staff_tasks.room_id</code> — a task shouldn't disappear because a room row changed).</p>
+
+  <pre><code>-- 001_initial_schema.sql
+-- Closes R5: commits the schema that is *already live* in Supabase today,
+-- exactly as inferred from ingest.py and tools.py (§2). Changes nothing —
+-- it's a baseline capture, not a redesign.
+
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;  -- gen_random_uuid()
+
+CREATE TABLE guests (
+    guest_id                text PRIMARY KEY,   -- G0001..G0300, sequential and guessable (R2 — fixed in 002)
+    guest_name               text NOT NULL,
+    guest_email               text,
+    hotel                     text,              -- Kaggle source column, dropped in 002
+    country                   text,
+    lead_time                 int,
+    arrival_date_year         int,
+    arrival_date_month        text,
+    arrival_date_day          int,
+    adults                    int,
+    children                  int,
+    babies                    int,
+    is_repeated_guest         bool DEFAULT false,
+    previous_cancellations    int DEFAULT 0,
+    reserved_room_type        text,
+    customer_type             text,
+    adr                       numeric(10,2)
+);
+
+CREATE TABLE policy_chunks (
+    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    source_file    text NOT NULL,
+    content        text NOT NULL,
+    embedding      vector(1024) NOT NULL
+);
+
+-- HNSW over IVFFlat: no training step needed at this corpus size (§4),
+-- and recall stays high without tuning lists/probes.
+CREATE INDEX policy_chunks_embedding_idx
+    ON policy_chunks USING hnsw (embedding vector_cosine_ops);
+</code></pre>
+
+  <pre><code>-- 002_refactor_guests_reservations.sql
+-- Phase 0 blocking migration (§8). Splits the flat Kaggle-derived guests
+-- row into guests (identity only) + reservations (owns booking_reference,
+-- which nothing currently owns). Preserves all 300 rows.
+
+BEGIN;
+
+CREATE TABLE guests_new (
+    id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    legacy_guest_id        text UNIQUE,  -- traceability back to G0001..G0300 during/after migration
+    first_name             text NOT NULL,
+    last_name               text NOT NULL,
+    email                   text,
+    phone                   text,
+    country_code            text,
+    preferred_language      text,
+    stripe_customer_id      text,
+    accessibility_flags     text[] DEFAULT '{}',
+    dietary_flags           text[] DEFAULT '{}',
+    created_at               timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE reservations (
+    booking_reference    text PRIMARY KEY,
+    guest_id              uuid NOT NULL REFERENCES guests_new(id) ON DELETE RESTRICT,
+    room_type_id           uuid,   -- FK added in 003 once room_types exists (Phase 1)
+    room_id                 uuid,   -- FK added in 003
+    group_booking_id         uuid,   -- FK added in 007 once event_bookings exists (Phase 7)
+    check_in_date            date NOT NULL,
+    check_out_date           date NOT NULL,
+    adr                      numeric(10,2),
+    status                    text NOT NULL DEFAULT 'confirmed'
+        CHECK (status IN ('confirmed','checked_in','checked_out','cancelled')),
+    CONSTRAINT reservations_dates_valid CHECK (check_out_date > check_in_date)
+);
+
+-- Backfill identity (best-effort name split — verified clean against all
+-- 300 Kaggle rows during Phase 0 testing, "First Last" throughout)
+INSERT INTO guests_new (legacy_guest_id, first_name, last_name, email, country_code, created_at)
+SELECT
+    guest_id,
+    split_part(guest_name, ' ', 1),
+    NULLIF(substring(guest_name FROM position(' ' IN guest_name) + 1), ''),
+    guest_email,
+    country,
+    now()
+FROM guests;
+
+-- One reservation per existing row — booking_reference synthesized since
+-- the flat table never had one
+INSERT INTO reservations (booking_reference, guest_id, check_in_date, check_out_date, adr, status)
+SELECT
+    'BK-' || g.guest_id,
+    gn.id,
+    make_date(g.arrival_date_year,
+              extract(month FROM to_date(g.arrival_date_month, 'Month'))::int,
+              g.arrival_date_day),
+    make_date(g.arrival_date_year,
+              extract(month FROM to_date(g.arrival_date_month, 'Month'))::int,
+              g.arrival_date_day) + make_interval(days =&gt; g.lead_time),
+    g.adr,
+    'confirmed'
+FROM guests g
+JOIN guests_new gn ON gn.legacy_guest_id = g.guest_id;
+
+-- Phase 0 "done" criteria (§9) is row-count parity, checked here, not assumed
+DO $$
+DECLARE
+    old_count int; new_guest_count int; new_resv_count int;
+BEGIN
+    SELECT count(*) INTO old_count FROM guests;
+    SELECT count(*) INTO new_guest_count FROM guests_new;
+    SELECT count(*) INTO new_resv_count FROM reservations;
+    IF old_count != new_guest_count OR old_count != new_resv_count THEN
+        RAISE EXCEPTION 'Row-count mismatch: guests=%, guests_new=%, reservations=%',
+            old_count, new_guest_count, new_resv_count;
+    END IF;
+END $$;
+
+ALTER TABLE guests RENAME TO guests_legacy_kaggle;  -- kept, not dropped — rollback path
+ALTER TABLE guests_new RENAME TO guests;
+
+COMMIT;
+
+-- Note: R2 (no access control on guest lookup) is not a schema fix — it's
+-- an application-level check in the corrected lookup_guest_profile (§2)
+-- confirming the requester's session actually matches the guest_id asked
+-- for. Migration alone doesn't close R2.</code></pre>
+
+  <p><strong>Migrations 003 onward</strong> — not written out in full (would duplicate the ER diagrams in Section 4 without adding anything), but the manifest is fixed by phase, and each one adds FKs the prior migration left as bare <code>uuid</code> columns:</p>
+  <table>
+    <tr><th>File</th><th>Phase</th><th>Adds</th></tr>
+    <tr><td><code>003_rooms_inventory.sql</code></td><td>1</td><td><code>room_types</code>, <code>rooms</code>, <code>room_features</code>, <code>keycards</code>, <code>room_sensor_events</code>, <code>rate_calendar</code> — then backfills the two bare FKs on <code>reservations</code></td></tr>
+    <tr><td><code>004_guest_notes.sql</code></td><td>2/4</td><td><code>guest_notes</code></td></tr>
+    <tr><td><code>005_staff_ops.sql</code></td><td>4</td><td><code>staff</code>, <code>staff_departments</code>, <code>staff_tasks</code></td></tr>
+    <tr><td><code>006_fnb_billing.sql</code></td><td>5</td><td><code>menu_items</code>, <code>orders</code>, <code>order_items</code>, <code>restaurant_reservations</code>, <code>kitchen_capacity</code>, <code>guest_bills</code>, <code>bill_items</code>, <code>accounting_code_mappings</code>, <code>payments</code>, <code>daily_closeouts</code></td></tr>
+    <tr><td><code>007_business_events.sql</code></td><td>7</td><td><code>companies</code>, <code>event_spaces</code>, <code>event_bookings</code>, <code>event_allocations</code>, <code>equipment_inventory</code>, <code>vendor_purchase_orders</code>, <code>event_packages</code> — then backfills <code>reservations.group_booking_id</code></td></tr>
+    <tr><td><code>008_experiences.sql</code></td><td>7</td><td><code>experiences</code>, <code>experience_bookings</code></td></tr>
+    <tr><td><code>009_conversation_costs.sql</code></td><td>8</td><td><code>conversation_costs</code> (standalone, per Section 10)</td></tr>
+  </table>
+
+  <h3>17.3 — Seed data definitions</h3>
+  <p>Deterministic, not hand-written per-row — every seed set is generated by a script using a fixed random seed (Faker, already the project's convention from the original 300-row Kaggle-derived <code>guests</code> ingest), so re-running seeding produces identical data for demos and tests alike. Output format is JSON, one file per table, checked into <code>seed/</code>, loaded by a single <code>seed.py</code> that respects FK order.</p>
+  <pre><code>// seed/room_types.json — 6 rows, one per real-world category this project models
+[
+  {
+    "name": "Standard Queen",
+    "bed_config": "1 queen",
+    "max_occupancy": 2,
+    "sq_meters": 24
+  },
+  {
+    "name": "Standard Twin",
+    "bed_config": "2 single",
+    "max_occupancy": 2,
+    "sq_meters": 24
+  },
+  {
+    "name": "Deluxe King",
+    "bed_config": "1 king",
+    "max_occupancy": 2,
+    "sq_meters": 32
+  },
+  {
+    "name": "Family Suite",
+    "bed_config": "1 king + sofa bed",
+    "max_occupancy": 4,
+    "sq_meters": 48
+  }
+]</code></pre>
+  <p class="cite">Same pattern for <code>menu_items.json</code> (the F&amp;B menu already scoped in Addendum B — sandwiches through champagne), <code>event_spaces.json</code>, <code>staff.json</code> (seeded against the seven finalized departments, §12), and <code>experiences.json</code> (the spa/pool/gym/tour catalogue from Addendum H). Room instances (<code>rooms.json</code>) are generated, not hand-authored — a script assigns floor/view/feature combinations programmatically against each room type's <code>max_occupancy</code>, so the count and distribution stay consistent if the property size changes later. Since <code>operational_status</code> was added to <code>ROOMS</code> (§4 review, 2026-08-05), the generator defaults every row to <code>active</code> and flips a small handful (1-2 out of the seeded set) to <code>out_of_order</code> — realistic, and gives <code>create_booking</code> something real to exclude rather than an always-empty case.</p>
+
+  <h3>17.4 — Tool &amp; adapter interfaces</h3>
+  <p>Section 11 names 18 tools and the conventions they follow (return contract, idempotency, confirmation style, granularity). Below are the interfaces themselves — enough worked examples to fix the pattern, not all 18 restated, since the remaining tools are mechanical repetitions of one of these four shapes.</p>
+  <pre><code>from pydantic import BaseModel
+from typing import Literal
+from datetime import date, datetime
+from decimal import Decimal
+from uuid import UUID
+
+class ToolResult(BaseModel):
+    """Universal return contract for every tool (§11) — never raise, always return this."""
+    status: Literal["ok", "error", "pending_confirmation"]
+    data: dict | None = None
+    error: str | None = None
+
+
+# --- Shape 1: Tier 1, read-only, no confirmation ---------------------------
+
+class VerifyGuestIdentityInput(BaseModel):
+    booking_reference: str
+    surname: str
+
+def verify_guest_identity(booking_reference: str, surname: str) -> ToolResult:
+    """Confirm a booking reference and surname match a reservation on file.
+    Tier 1 — read-only, fully autonomous. Returns data={guest_id, verified,
+    reservation_status} on match; status='error' (not a raised exception)
+    on no match, per R1's lesson."""
+    ...
+
+
+# --- Shape 2: Tier 2, write, idempotent, logged/reversible -----------------
+
+class PlaceOrderInput(BaseModel):
+    idempotency_key: UUID          # reused from the client's write-ahead
+                                    # queue (Addendum D) — replay-safe
+    reservation_id: str
+    room_id: UUID | None = None
+    items: list["OrderLineItem"]
+    order_type: Literal["room_service", "dine_in"]
+
+class OrderLineItem(BaseModel):
+    menu_item_id: UUID
+    quantity: int
+    modifiers: dict = {}
+    special_instructions: str | None = None
+
+def place_order(order: PlaceOrderInput) -> ToolResult:
+    """Places a room-service/dine-in order. Tier 2 — writes but stays
+    logged and reversible (order can be cancelled, not the payment)."""
+    ...
+
+
+# --- Shape 3: Tier 3, simple yes/no confirmation ----------------------------
+
+def modify_booking(booking_reference: str, new_check_in: date | None,
+                    new_check_out: date | None) -> ToolResult:
+    """Changes reservation dates. Tier 3 — uses ADK's native
+    require_confirmation=True (§7/§11); a plain yes/no from a human is
+    sufficient, nothing structured needs to come back."""
+    ...
+
+def process_payment(guest_bill_id: UUID, amount: Decimal,
+                     idempotency_key: UUID) -> ToolResult:
+    """Captures a (test-mode) Stripe charge against a guest bill. Tier 3,
+    same require_confirmation=True pattern as modify_booking."""
+    ...
+
+
+# --- Shape 4: Tier 3, advanced/structured confirmation ---------------------
+
+class EventQuoteApprovalPayload(BaseModel):
+    """The structured response a Sales Manager sends back — not a boolean.
+    Built via the hand-rolled pending_approvals flow (§7/§11), since ADK's
+    native confirmation feature doesn't support DatabaseSessionService."""
+    approved: bool
+    adjusted_total: Decimal | None = None
+    manager_notes: str | None = None
+
+def approve_event_quote(event_booking_id: UUID,
+                         approval: EventQuoteApprovalPayload) -> ToolResult:
+    """Finalizes, edits, or rejects a generated event quote. Tier 3 —
+    sales_agent, distinct trust boundary from ops_agent (§6)."""
+    ...</code></pre>
+
+  <p><strong>Adapter base classes</strong> — every mocked system (§6) implements one of these, so a real integration later only means writing a new subclass, not touching any tool signature above it:</p>
+  <pre><code>from abc import ABC, abstractmethod
+from datetime import date
+from decimal import Decimal
+from uuid import UUID
+
+class PMSAdapter(ABC):
+    """Mocked hotel PMS — room/rate/occupancy authority (Addendum J)."""
+
+    @abstractmethod
+    def get_room_status(self, room_id: UUID) -> dict:
+        """occupancy_status, housekeeping_status, energy_mode."""
+
+    @abstractmethod
+    def get_occupancy_forecast(self, start: date, end: date) -> dict:
+        """Per-date occupied/available counts by room_type_id."""
+
+    @abstractmethod
+    def compute_displacement_cost(self, room_type_id: UUID,
+                                   blocked_dates: list[date]) -> Decimal:
+        """Yield-math input for event feasibility (§Addendum J)."""
+
+
+class POSAdapter(ABC):
+    """Mocked point-of-sale / F&amp;B posting."""
+
+    @abstractmethod
+    def post_charge(self, guest_bill_id: UUID, amount: Decimal,
+                     accounting_code: str) -> dict:
+        """Returns a confirmation dict; never mutates bill_items directly —
+        appends a new row (§4's append-only policy)."""
+
+
+class ERPAdapter(ABC):
+    """Mocked vendor/procurement system — generalized PO mock."""
+
+    @abstractmethod
+    def create_purchase_order(self, vendor_ref: str,
+                               line_items: list[dict]) -> dict:
+        """Returns a vendor_purchase_orders-shaped confirmation."""
+
+
+class SensorLockAdapter(ABC):
+    """Mocked INNCOM/Telkonet-style occupancy sensors + keycard locks."""
+
+    @abstractmethod
+    def emit_sensor_event(self, room_id: UUID, event_type: str) -> None:
+        """Writes a room_sensor_events row; called by the simulator, not
+        by any agent tool directly — Signal in the class model (§4)."""
+
+    @abstractmethod
+    def issue_keycard(self, room_id: UUID, guest_id: UUID,
+                       access_type: str) -> dict:
+        """Returns a keycards-shaped confirmation with expires_at set."""</code></pre>
+
+  <h3>17.5 — Milestone scoping, confirmed</h3>
+  <p><strong>Phase 0 is a strict blocking gate.</strong> Restated here as an explicit sign-off, not just design narrative: no Phase 1 work — no room inventory, no check-in tooling, nothing — starts until R1 is fixed and tested, R2's access check is in place, a dependency manifest is committed, migrations <code>001</code> and <code>002</code> above are applied to a fresh Supabase project, and the row-count parity check in <code>002</code> passes. This gate exists because every later phase's tool signatures assume a working <code>reservations</code> table; building on top of it missing is rework, not progress.</p>
+  <p><strong>Phase 8 eval acceptance criteria are already fully specified</strong> in Section 9's Phase 8 card — five scenario categories (Tier 1 lookups, Tier 2 writes, Tier 3 confirmation safety, multi-agent handoffs, adversarial/edge cases), each with its own pass-rate target and a fixed rubric per scenario rather than free-form LLM-as-judge scoring. Confirmed here as the acceptance bar for calling Phase 8 done, not a target to be renegotiated once the suite is written.</p>
+</section>
+
+<footer>
+  Draft v1 — first-draft proposal, not yet reviewed or approved. Self-contained; <code>docs/mycheckpoint.html</code> remains the underlying current-state audit this proposal was built from. Update in place as decisions in Section 15/17.1 get resolved.
+</footer>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  mermaid.initialize({
+    startOnLoad: true,
+    securityLevel: 'loose',
+    theme: 'base',
+    themeVariables: prefersDark ? {
+      background: '#1b1a18', primaryColor: '#3a2c22', primaryTextColor: '#eae6df',
+      primaryBorderColor: '#e08b5f', lineColor: '#b9b3a8', secondaryColor: '#242220',
+      tertiaryColor: '#242220', fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif',
+      fontSize: '14px'
+    } : {
+      background: '#fbfaf8', primaryColor: '#f4e3d8', primaryTextColor: '#22201d',
+      primaryBorderColor: '#9c4221', lineColor: '#57534d', secondaryColor: '#ffffff',
+      tertiaryColor: '#ffffff', fontFamily: '-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif',
+      fontSize: '14px'
+    }
+  });
+</script>
+</body>
+</html>
