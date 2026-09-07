@@ -35,18 +35,50 @@ def verify_guest_identity(booking_reference: str, surname: str) -> ToolResult:
 - Replaces `lookup_guest_profile` entirely (FR-010) — that function and its registration in
   `agent.py` are removed, not deprecated alongside.
 
+## assign_room — Tier 2, write, idempotent, logged/reversible
+
+```python
+def assign_room(
+    idempotency_key: UUID,
+    booking_reference: str,
+    room_id: UUID | None = None,
+    desired_features: list[str] | None = None,
+) -> ToolResult:
+```
+
+- New 2026-08-12 — separates physical room allocation from both booking and check-in (see
+  `spec.md` Clarifications, Session 2026-08-12).
+- Precondition: reservation `status = 'confirmed'`.
+- If `room_id` given: validates it belongs to the reservation's `room_type_id`, is
+  `operational_status = 'active'`, and isn't already the `room_id` of a different active
+  reservation with overlapping dates.
+- If `room_id` omitted: searches rooms of the reservation's `room_type_id` not already assigned to
+  another overlapping active reservation, optionally filtered by `desired_features` against
+  `room_features`; assigns the first match.
+- Effect: sets `reservations.room_id`. Does **not** touch `rooms.occupancy_status` — assignment is
+  not occupancy.
+- Mutable, not a one-time lock: calling it again on the same reservation reassigns a different
+  room rather than erroring.
+
 ## check_in_guest — Tier 2, write, idempotent, logged/reversible
 
 ```python
-def check_in_guest(idempotency_key: UUID, booking_reference: str) -> ToolResult:
+def check_in_guest(
+    idempotency_key: UUID,
+    booking_reference: str,
+) -> ToolResult:
 ```
 
-- Preconditions: reservation exists, `status = 'confirmed'`, an available room of the reservation's
-  `room_type_id` exists.
-- Effect: assigns an available `room_id`, sets `reservations.status = 'checked_in'`, sets
-  `rooms.occupancy_status = 'occupied'`.
+- **Revised 2026-08-12**: no longer searches for a room itself — that's `assign_room`'s job now.
+- Preconditions: reservation exists, `status = 'confirmed'`, **and `room_id` already set** (via a
+  prior `assign_room` call). Rejects with a distinct error if `room_id` is `NULL`, telling the
+  caller to run `assign_room` first, rather than silently picking a room.
+- Also validates the *already-assigned* room is currently `occupancy_status = 'vacant'` and
+  `operational_status = 'active'` — this is where a holdover guest or an out-of-order room still
+  surfaces, just as a rejection instead of a silent reassignment.
+- Effect: sets `reservations.status = 'checked_in'`, sets `rooms.occupancy_status = 'occupied'`.
 - Rejections (`status="error"`): reservation not found; reservation not in `confirmed` state
-  (FR-015); no room available of the required type (FR-016).
+  (FR-015); no room assigned yet; assigned room not currently ready.
 - Idempotent replay of the same key returns the original result without re-running the state change.
 
 ## check_out_guest — Tier 2, write, idempotent, logged/reversible

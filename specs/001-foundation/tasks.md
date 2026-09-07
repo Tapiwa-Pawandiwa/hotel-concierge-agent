@@ -149,7 +149,7 @@ confirm the room is released (quickstart.md "Story 3").
 cancel an existing one — the latter two always confirmation-gated. Every booking also needs a
 resolved guest identity behind it: an existing profile found by search, or a new one created on
 the spot — not assumed to already exist the way `create_booking`'s `guest_id` parameter originally
-implied (source proposal §11 "why" note, 2026-08-12 — see Guest Profile Management below).
+implied (source proposal §11 "why" note — see Guest Profile Management below).
 
 **Independent Test**: Search for a guest profile, confirm a no-match creates a new one and a match
 reuses the existing one; create a booking end-to-end against the resolved `guest_id`; modify its
@@ -158,22 +158,43 @@ it commits (quickstart.md "Story 4", extended).
 
 ### Implementation for User Story 4
 
-- [ ] T016 [US4] Write `db/migrations/005_room_operational_status.sql` — add `operational_status`
-      text to `rooms` (`active`/`out_of_order`, default `active`), same pattern as
+- [x] T016 [US4] Write a migration adding `operational_status` text to `rooms`
+      (`active`/`out_of_order`, default `active`), same pattern as
       `occupancy_status`/`housekeeping_status`. Apply on top of 004; confirm all existing rows
-      default to `active` (data-model.md, source proposal §4 "why" note, 2026-08-05).
-- [ ] T017 [US4] Implement `list_room_types(check_in_date, check_out_date) -> ToolResult` in
+      default to `active` (data-model.md, source proposal §4 "why" note).
+      **Number collision**: this was going to be `005_room_operational_status.sql`,
+      but `data-model.md` also references an uncommitted `005_idempotency_key_as_text.sql` already
+      applied live — confirm with the human which was actually applied and in what order before
+      writing this file, don't assume `005` is free.
+- [x] T017 [US4] Implement `assign_room(idempotency_key, booking_reference, room_id=None,
+      desired_features=None) -> ToolResult` in `agent/concierge_agent/tools.py`, using the T007
+      helper (later clarification — new tool, separates physical room allocation from both
+      booking and check-in). Precondition: reservation status `confirmed`. If `room_id` given,
+      validates it belongs to the reservation's `room_type_id`, is `operational_status = 'active'`,
+      and isn't already the assigned `room_id` of a *different* active reservation overlapping
+      dates; rejects otherwise. If `room_id` omitted, searches rooms of the reservation's
+      `room_type_id` not already assigned to another overlapping active reservation, optionally
+      filtered by `desired_features` matching that room's `room_features` tags; assigns the first
+      match. Sets `reservations.room_id` — does NOT touch `rooms.occupancy_status` (that's
+      check-in's job, per the later clarification: assignment ≠ occupancy). Mutable — calling
+      it again on the same reservation reassigns a different room, it doesn't error.
+      **Also revises `check_in_guest` (shipped in T014)**: removes its internal room-search entirely;
+      it now requires `reservations.room_id` already set (rejects with a distinct "no room assigned
+      — call assign_room first" error if `NULL`), and validates the *already-assigned* room's
+      `occupancy_status = 'vacant'` (and `operational_status = 'active'`) before completing check-in,
+      rather than searching for and picking any vacant room of the right type itself.
+- [x] T018 [US4] Implement `list_room_types(check_in_date, check_out_date) -> ToolResult` in
       `agent/concierge_agent/tools.py`. Tier 1, read-only, no confirmation. Returns every room
       type's `bed_config`/`max_occupancy`/`sq_meters`/`room_features.feature` list plus real
-      per-date availability for the requested range — same counting logic T021 uses
+      per-date availability for the requested range — same counting logic T022 uses
       (`count(rooms of room_type_id, operational_status = 'active') - count(overlapping
       reservations)`), factored into a shared helper both tools call rather than duplicated.
       Resolves natural-language room requests ("a suite with a couch") via the model's own
       reasoning over the returned list, not a structured filter parameter (source proposal §4/§11
-      "why" note, 2026-08-05 — this is the tool that closes the gap between what a guest describes
+      "why" note — this is the tool that closes the gap between what a guest describes
       and the `room_type_id` `create_booking` needs).
 
-#### Guest Profile Management (new, added 2026-08-12)
+#### Guest Profile Management (new, added after the original scope)
 
 The person (`guests` — a **Who**, Principle II) and the stay (`reservations` — a **Request**) are
 separate primitives and separate writes, matching how hotels actually run this: a profile can
@@ -184,7 +205,7 @@ its `legacy_guest_id` column already exist from migration 002, and that column i
 `NOT NULL` constraint, so new profiles can leave it `NULL` (Postgres `UNIQUE` already permits
 multiple `NULL`s).
 
-- [ ] T018 [US4] Implement `search_guest_profiles(first_name=None, last_name=None, email=None,
+- [x] T019 [US4] Implement `search_guest_profiles(first_name=None, last_name=None, email=None,
       phone=None) -> ToolResult` in `agent/concierge_agent/tools.py`. Tier 1, read-only, no
       confirmation. Matches on exact case-insensitive `email` or `phone` if given, else `ILIKE` on
       `first_name`/`last_name`; returns up to 5 candidate `guests` rows (`guest_id`, `first_name`,
@@ -193,23 +214,23 @@ multiple `NULL`s).
       not requirements here) as speculative for this phase; the model presents candidates
       conversationally and lets the guest confirm — the same pattern `list_room_types` already uses
       to resolve "a suite with a couch" over a returned list instead of a structured filter.
-- [ ] T019 [US4] Implement `create_guest_profile(idempotency_key, first_name, last_name, email=None,
+- [x] T020 [US4] Implement `create_guest_profile(idempotency_key, first_name, last_name, email=None,
       phone=None, country=None) -> ToolResult` in `agent/concierge_agent/tools.py`, using the T007
       helper. Tier 2 — write, logged, reversible; no human confirmation required (same tier as
       `check_in_guest`/`check_out_guest` — a profile alone carries no money or dates). Inserts a new
       `guests` row with `legacy_guest_id = NULL` and returns the new `guest_id`. Does not itself
-      check for duplicates — relies on the agent having called T018 first, per its instruction text
-      (T024); no DB-level dedupe/merge this phase, matching the "search upfront, no automatic merge"
+      check for duplicates — relies on the agent having called T019 first, per its instruction text
+      (T025); no DB-level dedupe/merge this phase, matching the "search upfront, no automatic merge"
       decision.
-- [ ] T020 [US4] Implement `update_guest_profile(idempotency_key, guest_id, first_name=None,
+- [x] T021 [US4] Implement `update_guest_profile(idempotency_key, guest_id, first_name=None,
       last_name=None, email=None, phone=None, country=None) -> ToolResult` in
-      `agent/concierge_agent/tools.py`, using the T007 helper. Tier 2, same reasoning as T019 — only
+      `agent/concierge_agent/tools.py`, using the T007 helper. Tier 2, same reasoning as T020 — only
       the supplied fields are updated (partial update, not full overwrite); rejects if `guest_id`
       doesn't exist.
 
 #### Booking, resumed
 
-- [ ] T021 [US4] Implement `create_booking(idempotency_key, guest_id, room_type_id, check_in_date,
+- [x] T022 [US4] Implement `create_booking(idempotency_key, guest_id, room_type_id, check_in_date,
       check_out_date) -> ToolResult` in `agent/concierge_agent/tools.py`, using the T007 helper.
       Rejects `check_out_date <= check_in_date`. Computes real per-date reservation availability
       (research.md §5), now excluding `out_of_order` rooms per T016: `count(rooms of room_type_id,
@@ -218,28 +239,104 @@ multiple `NULL`s).
       `<= 0` — modeled deterministically on standard hotel-booking-site behavior, not just a "does
       this room type exist" check (FR-018, FR-019). Generates a new `booking_reference`, inserts
       with `status = 'confirmed'` only once availability is confirmed. `guest_id` is now always a
-      resolved value — from T018/T019 for a new guest, or T009's `verify_guest_identity` for a
+      resolved value — from T019/T020 for a new guest, or T009's `verify_guest_identity` for a
       returning guest citing an existing reservation; `create_booking` itself takes no new
       parameters, only its precondition changed, from assumed to explicit.
-- [ ] T022 [US4] Implement `modify_booking(idempotency_key, booking_reference, new_check_in,
+- [x] T023 [US4] Implement `modify_booking(idempotency_key, booking_reference, new_check_in,
       new_check_out) -> ToolResult` in `agent/concierge_agent/tools.py` using ADK's native
       `require_confirmation=True` (research.md §4). Precondition: reservation status `confirmed` or
       `checked_in` (data-model.md precondition table); rejects a resulting range where checkout
       isn't after check-in; leaves the reservation unchanged if not confirmed (FR-020).
-- [ ] T023 [US4] Implement `cancel_booking(idempotency_key, booking_reference) -> ToolResult` in
+- [x] T024 [US4] Implement `cancel_booking(idempotency_key, booking_reference) -> ToolResult` in
       `agent/concierge_agent/tools.py`, same `require_confirmation=True` pattern and precondition
-      states as T022; sets `status = 'cancelled'` only after confirmation (FR-020).
-- [ ] T024 [US4] Register all seven tools (`list_room_types`, `search_guest_profiles`,
-      `create_guest_profile`, `update_guest_profile`, `create_booking`, `modify_booking`,
-      `cancel_booking`) in `agent/concierge_agent/agent.py`; update instruction text so the agent
-      always searches for a guest profile before creating one, only creates one on a confirmed
-      no-match, and explains the confirmation step to the guest before `modify_booking`/
-      `cancel_booking` fire.
-- [ ] T025 [US4] Manually validate all 4 acceptance scenarios in `quickstart.md`'s "Story 4" section,
-      plus two new ones: ask for a room type matching a described preference (e.g. "a suite with a
-      couch") before booking, confirming `list_room_types` resolves it correctly; and run the same
-      guest through the profile flow twice with matching contact details, confirming the second pass
-      reuses the existing `guest_id` instead of creating a duplicate.
+      states as T023; sets `status = 'cancelled'` only after confirmation (FR-020).
+
+#### Products & pricing — fixes a live bug, not new scope (added after the original scope)
+
+Code review found the shipped `create_booking` pricing breakfast from
+`SELECT value FROM hotel_settings WHERE key = 'breakfast_rate_per_day'` — an uncommitted table used
+as a catalogue price source — plus a separate bug where the returned `total_price` is referenced
+but never computed (`NameError` on every real call). See `data-model.md`'s new
+`products`/`product_prices`/`reservation_products` section and
+`docs/implementation_proposal.html` §1/§4 why-notes for the full design reasoning.
+
+- [x] T025 [US4] Write a migration adding `products`, `product_prices`, `reservation_products` per
+      `data-model.md` (each including `created_at`). Seed `products`/`product_prices` with one row
+      (`BREAKFAST`, `PER_NIGHT`, matching whatever `breakfast_rate_per_day` was actually set to in
+      `hotel_settings`, so the price doesn't silently change under this migration). Do **not** carry
+      `hotel_settings` forward as a price source for anything — it's still fine for genuine
+      operational config (`check_in_time`, `timezone`, restaurant `capacity`), just not prices. Apply
+      on top of T016. **Number collision**: this was going to be
+      `006_products_pricing.sql`, but `data-model.md` also references an uncommitted
+      `006_room_type_rates.sql` (`room_types.base_rate`) already applied live — same confirmation
+      needed as T016 before this gets a real filename.
+- [x] T026 [US4] Rework `create_booking` in `agent/concierge_agent/tools.py`: delete the duplicate,
+      earlier `create_booking` definition entirely (two functions of the same name currently exist —
+      Python silently keeps only the later one, so the first is dead code and the second, worse one
+      is what actually runs). Replace the `hotel_settings` breakfast lookup with a `product_prices`
+      read (current applicable row for `BREAKFAST`, `valid_to IS NULL` or covers today) and, on
+      success, insert a matching `reservation_products` row with `unit_price`/`pricing_basis`
+      snapshotted from that read — not a live join, per `data-model.md`'s reasoning. Drop
+      `reservations.breakfast_included` from the insert; `reservation_products` is now the source of
+      truth. Fix the undefined `total_price` (compute it: `(base_rate * nights) + breakfast_total`,
+      restored from the dead first definition rather than reinvented). Uses the T007 helper, same as
+      before.
+#### Audit metadata — every table reviewed, not just reservations (added after the original scope)
+
+Triggered directly: "the schema for reservations doesn't include valuable metadata like modified
+date or created date," then broadened to "we need valuable metadata for all tables, please review
+your logic, and discuss with me." Full table-by-table split lives in `data-model.md`'s new "Audit
+metadata review" section — real live gaps (`guests`, `reservations`, `rooms`), lower-priority
+consistency additions (`room_types`, `room_features`), and tables deliberately left alone
+(`idempotency_keys`, `product_prices`, `reservation_products`, `policy_chunks`), each with its own
+reasoning, not a blanket add-everywhere pass.
+
+- [x] T027 [US4] Write a migration adding: `guests.updated_at`; `reservations.created_at` and
+      `.updated_at`; `rooms.created_at` and `.updated_at`; `room_types.created_at`;
+      `room_features.created_at`. Also create one shared `set_updated_at()` trigger function (full
+      SQL in `data-model.md`) and attach it via a separate `CREATE TRIGGER ... BEFORE UPDATE` on
+      `guests`, `reservations`, and `rooms` — one function, three triggers, not three copies of the
+      same logic. **Number collision**: provisionally `007`, contingent on T016/T025 resolving to
+      real, non-colliding numbers first — confirm the full real sequence with the human before
+      writing this file.
+- [x] T028 [US4] Register all eight tools (`assign_room`, `list_room_types`,
+      `search_guest_profiles`, `create_guest_profile`, `update_guest_profile`, `create_booking`,
+      `modify_booking`, `cancel_booking`) in `agent/concierge_agent/agent.py`; update instruction
+      text so the agent always searches for a guest profile before creating one, only creates one
+      on a confirmed no-match, calls `assign_room` before offering check-in whenever a reservation
+      has no `room_id` yet (and again if `check_in_guest` rejects with the "no room assigned"
+      error), and explains the confirmation step to the guest before `modify_booking`/
+      `cancel_booking` fire. Also fix the truncated/garbled sentences already in the instruction
+      string (e.g. "assign_room, cr\ncreate_guest_profile" and "wait for th\nsystem commits it") —
+      found on code review, likely a paste accident, not a deliberate abbreviation.
+- [x] T029 [US4] Manually validate all 4 acceptance scenarios in `quickstart.md`'s "Story 4" section,
+      plus three new ones: ask for a room type matching a described preference (e.g. "a suite with a
+      couch") before booking, confirming `list_room_types` resolves it correctly; run the same guest
+      through the profile flow twice with matching contact details, confirming the second pass reuses
+      the existing `guest_id` instead of creating a duplicate; and book with breakfast added,
+      confirming the response includes a real `total_price` and a `reservation_products` row exists
+      with the snapshotted price.
+
+#### Found via live testing, added after T026/T028 — not part of their original scope
+
+- [ ] T030 [US4] Two related fixes, both needed together: (1) In `agent/concierge_agent/agent.py`'s
+      instruction string, inject the real current date (e.g. an f-string with
+      `datetime.date.today().isoformat()` at agent-construction time) so the "DATES" section has
+      something to reason "past" vs. "future" against — live-tested and confirmed the agent asks "And
+      which year, 2024 or 2025?" because nothing in its instructions currently tells it what today is.
+      (2) In `agent/concierge_agent/tools.py`'s `create_booking`, add a guard rejecting
+      `check_in_date` before today, alongside the existing `check_out_date <= check_in_date` check —
+      defense-in-depth so a past booking can't be created even if (1) somehow fails or gets bypassed.
+- [ ] T031 [US4] Fix a PII-disclosure gap in the guest-profile-match flow — same failure class as R1's
+      original `lookup_guest_profile` finding (any requester gets a matched profile's PII), just in a
+      new tool: live-tested and the agent reads the *stored* email/phone back to the guest to confirm
+      a `search_guest_profiles` match (e.g. "the profile has the email suzannesmith@example.org on
+      file — is this you?"), disclosing another guest's contact details to whoever's chatting if
+      names collide or a wrong match gets read back. Fix in `agent.py`'s instruction text only (no
+      tool signature change needed): never recite a candidate's stored `email`/`phone` to the guest —
+      reference candidates by name only, and if disambiguation is genuinely needed, ask the guest to
+      state their own contact detail and silently check it against the candidate rather than
+      displaying what's on file.
 
 **Checkpoint**: User Stories 1–4 all independently functional.
 
@@ -254,12 +351,12 @@ multiple `NULL`s).
 
 ### Implementation for User Story 5
 
-- [ ] T026 [US5] Implement `request_human_handoff(reason: str | None = None) -> ToolResult` in
+- [ ] T032 [US5] Implement `request_human_handoff(reason: str | None = None) -> ToolResult` in
       `agent/concierge_agent/tools.py` — minimal acknowledgment only, no `staff_tasks` persistence
       this phase (spec.md Assumptions; FR-021).
-- [ ] T027 [US5] Register the tool in `agent/concierge_agent/agent.py`; update instruction text so
+- [ ] T033 [US5] Register the tool in `agent/concierge_agent/agent.py`; update instruction text so
       the agent offers this path when it can't resolve a request itself.
-- [ ] T028 [US5] Manually validate the acceptance scenario in `quickstart.md`'s "Story 5" section.
+- [ ] T034 [US5] Manually validate the acceptance scenario in `quickstart.md`'s "Story 5" section.
 
 **Checkpoint**: All five user stories independently functional.
 
@@ -269,23 +366,24 @@ multiple `NULL`s).
 
 **Purpose**: Verify the requirements that cut across every story rather than belonging to one.
 
-- [ ] T029 Verify SC-007 by its own stated method — replay: call each of the seven write tools
-      (`check_in_guest`, `check_out_guest`, `create_guest_profile`, `update_guest_profile`,
-      `create_booking`, `modify_booking`, `cancel_booking`) twice with the *same*
-      `idempotency_key`, and confirm the second call returns the first call's stored `result`
-      verbatim with no second state change in the database (quickstart.md's new "Idempotency
-      replay" steps under Stories 3 and 4). Implementation existing (T007) alone doesn't satisfy
-      SC-007 — this task is the verification the criterion itself specifies.
-- [ ] T030 [P] Audit every tool touched or added this phase (`verify_guest_identity`,
-      `check_in_guest`, `check_out_guest`, `list_room_types`, `search_guest_profiles`,
-      `create_guest_profile`, `update_guest_profile`, `create_booking`, `modify_booking`,
-      `cancel_booking`, `request_human_handoff`) in `agent/concierge_agent/tools.py` for FR-008
+- [x] T035 Verify SC-007 by its own stated method — replay: call each of the eight write tools
+      (`check_in_guest`, `check_out_guest`, `assign_room`, `create_guest_profile`,
+      `update_guest_profile`, `create_booking`, `modify_booking`, `cancel_booking`) twice with the
+      *same* `idempotency_key`, and confirm the second call returns the first call's stored
+      `result` verbatim with no second state change in the database (quickstart.md's new
+      "Idempotency replay" steps under Stories 3 and 4). Implementation existing (T007) alone
+      doesn't satisfy SC-007 — this task is the verification the criterion itself specifies.
+- [x] T036 [P] Audit every tool touched or added this phase (`verify_guest_identity`,
+      `check_in_guest`, `check_out_guest`, `assign_room`, `list_room_types`,
+      `search_guest_profiles`, `create_guest_profile`, `update_guest_profile`, `create_booking`,
+      `modify_booking`, `cancel_booking`, `request_human_handoff`) in
+      `agent/concierge_agent/tools.py` for FR-008
       compliance — `{status, data, error}` return shape, zero uncaught exceptions, including on a
       dropped DB connection.
-- [ ] T031 Fresh-environment check: new empty virtual environment, `pip install -r
+- [x] T037 Fresh-environment check: new empty virtual environment, `pip install -r
       agent/requirements.txt`, `adk run` from `agent/` starts with no `ImportError`/missing-package
       failure (SC-004; quickstart.md final section).
-- [ ] T032 Full end-to-end `quickstart.md` pass across all 5 stories in one sitting, against a
+- [ ] T038 Full end-to-end `quickstart.md` pass across all 5 stories in one sitting, against a
       freshly re-migrated scratch database, before marking this phase complete.
 
 ---
@@ -315,7 +413,7 @@ multiple `NULL`s).
 - Once Foundational (Phase 2) is done, US1 and US5 have no cross-story dependency and could be built
   in either order or concurrently by different people; US3 and US4 are best sequenced after US1 given
   the identity-verification precondition, even though nothing enforces that in code.
-- T030 (Polish audit) has no file dependency on T029/T031/T032 and can run in parallel with them.
+- T036 (Polish audit) has no file dependency on T035/T037/T038 and can run in parallel with them.
 
 ---
 

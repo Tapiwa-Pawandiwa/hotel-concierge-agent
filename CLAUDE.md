@@ -21,8 +21,8 @@ No `requirements.txt`/`pyproject.toml`, no committed migrations, no `seed/` dire
 
 ## Operating mode: worked-example (Project 1)
 
-This is the standing instruction for every session, not a one-time preference. Superseded
-2026-08-05: this project is explicitly Project 1 of a portfolio-building learning arc, and unlike
+This is the standing instruction for every session, not a one-time preference. Supersedes an
+earlier, stricter version of this section: this project is explicitly Project 1 of a portfolio-building learning arc, and unlike
 prior domains (React Native), there's no existing pattern vocabulary for agent code or RAG
 scripts to build from — guided discovery without seeing working code first is the *slow* path
 here, not the rigorous one. Later projects in the arc are expected to shift back toward
@@ -36,7 +36,7 @@ not a permanent retreat from "guide, don't generate."
 - Exception unchanged: scaffolding with no learning value (boilerplate config, `.gitignore`, formatting) is fine for me to just do directly.
 - Reviews (when something breaks) should be specific: cite the line, name the failure class, explain why — don't just say "try this instead" without the reasoning.
 
-## MVP scope & order (started 2026-08-05)
+## MVP scope & order
 
 Portfolio/job priority, not a calendar countdown — sessions happen whenever there's time between
 other commitments, so progress is tracked purely by what's checked off in `tasks.md`, never by a
@@ -45,27 +45,41 @@ chosen explicitly over "thin slice across all 3 agents"): get `concierge_agent` 
 end-to-end on the real schema, tested, demoable. `ops_agent`/`sales_agent`, the staff dashboard,
 resilience/kill-switch, and the event-feasibility engine stay fully documented (already are in
 `implementation_proposal.html`) but are **not** part of this scope — they're the next milestone
-after, not squeezed into this one. Public deployment/guardrails (rate limiting, per-visitor state
-isolation) are also deliberately deferred past this scope — get it solid locally and tested first.
+after, not squeezed into this one. Per-visitor state isolation is still deliberately deferred past
+this scope — get it solid locally and tested first. **Reversed 2026-09-03**: basic rate limiting is
+now in scope for Milestone 3 (Guest chat UI), not deferred — the original deferral assumed the
+agent stayed local; once it's genuinely public (this milestone's own goal, portfolio-linked), an
+unauthenticated endpoint calling a real, metered Claude API needs at least basic abuse protection
+before going live, not after. Scoped as "basic" deliberately — a simple per-IP/per-session request
+cap, not a full guardrails system (that fuller system, alongside per-visitor state isolation, is
+still Phase 3/`specs/004-resilience`, later).
 
 | Order | Milestone | Phase / scope |
 |---|---|---|
 | 1 | Migrations 001 (baseline) + 002 (guests/reservations split) + 003 (room inventory), `requirements.txt`, row-count parity verified at each step | Phase 0+1+2 merged — full |
-| 2 | `verify_guest_identity`, `check_in_guest`, `check_out_guest` (done), `list_room_types` (new — added 2026-08-05, resolves a room-discovery gap found during schema review), `create_booking`, `modify_booking`/`cancel_booking`, `request_human_handoff` on `concierge_agent`, wired to the real schema | Phase 0+1+2 merged — full |
-| 3 | `menu_items`, `place_order`. Skip full billing/payment capture (guest bills, Stripe) — fast-follow, not needed for the core loop to feel real | Phase 5 — slice |
-| 4 | Guest chat UI — `web/` app, `/chat` route, single chat surface calling ADK's `/run_sse` endpoint. No auth, no role selector — this is the guest-facing side only | New — added 2026-08-05, wasn't previously scoped (the original 9-phase breakdown only ever scoped the *staff* dashboard, Phase 6). Tracked as `specs/010-guest-chat-ui` in the Spec-kit workflow table below, Short gate depth — still needs its own `specify`/`plan`/`tasks` pass when you reach it, not an assumption that `specs/001-foundation` already covers it |
+| 2 | `verify_guest_identity`, `check_in_guest`, `check_out_guest` (done), `list_room_types` (added after the original scope — resolves a room-discovery gap found during schema review), `search_guest_profiles`/`create_guest_profile`/`update_guest_profile` (added after the original scope — resolves a guest-onboarding gap: neither `create_booking` nor `verify_guest_identity` had a path for a guest with no prior `guest_id`/`booking_reference` — walk-in or first-time online), `assign_room` (added after the original scope — separates physical room allocation from booking and check-in), `products`/`product_prices`/`reservation_products` (added after the original scope — fixes a live bug: breakfast pricing was reading from an uncommitted `hotel_settings` key-value row instead of a real price catalogue), audit metadata (added after the original scope: `created_at`/`updated_at` added where a real gap existed — `guests`, `reservations`, `rooms` — plus lower-priority consistency additions on `room_types`/`room_features`, via one shared DB trigger; full table-by-table reasoning in `data-model.md`), `create_booking`, `modify_booking`/`cancel_booking`, `request_human_handoff` on `concierge_agent`, wired to the real schema | Phase 0+1+2 merged — full |
+| 3 | Guest chat UI — `web/` app, `/chat` route, single chat surface calling ADK's `/run_sse` endpoint. No auth, no role selector — this is the guest-facing side only | New — wasn't previously scoped (the original 9-phase breakdown only ever scoped the *staff* dashboard, Phase 6). Tracked as `specs/010-guest-chat-ui` in the Spec-kit workflow table below, Short gate depth — still needs its own `specify`/`plan`/`tasks` pass when you reach it, not an assumption that `specs/001-foundation` already covers it |
+| 4 | `menu_items`, `place_order`, `book_restaurant_table` — `menu_items` gains a beverage-covering `category` field and `RESTAURANT_RESERVATIONS` gains `special_requests` (documented in `implementation_proposal.html` §4 why-note; restaurant stays one merged concept, not split into multiple outlets — staff link via existing `staff.department`, capacity as a `hotel_settings` field, no real seat-availability logic until this milestone). Skip full billing/payment capture (guest bills, Stripe) — fast-follow, not needed for the core loop to feel real | Phase 5 — slice |
 | 5 | Hand-written test pass, run *through the UI* now that it exists (a handful of real scenarios, not the full 15-20 suite yet) — fix what breaks | Testing |
 | 6 | README, a short demo script/recording, confirm a fresh checkout runs clean | Polish |
 
+**Milestones 3 and 4 swapped** — originally UI came after the F&B slice; reordered
+because the goal shifted to "something live and visible on GitHub/portfolio soon," and F&B tools
+add backend capability without anything to demo them through, while the UI is what actually makes
+the project visible. F&B is now a fast-follow after the first live push, not a blocker to it — the
+work itself is unchanged, only the order. Basic hosting (Cloud Run per §6/§9 research, still an
+open decision on specifics) belongs inside Milestone 3 now too, not a separate later step, since
+"live on the website" needs both the UI and somewhere for it to run.
+
 Milestones 1–2 were originally three separate rows (Phase 0 / Phase 1 / Phase 2), merged
-mid-session (2026-08-05) because Phase 2's tool signatures (`verify_guest_identity`,
+mid-session because Phase 2's tool signatures (`verify_guest_identity`,
 `check_in_guest`, `create_booking`, ...) depend on both Phase 0's `reservations` table and Phase
 1's room inventory existing — building them separately would land intermediate states with
 nothing demonstrable. See `specs/001-foundation/spec.md`'s `## Clarifications` section for the
 full rationale.
 
 **Two UI surfaces, two different times — don't conflate them.** The guest chat widget
-(Milestone 4 above) and the staff dashboard (role selector, task views, approval queue) are the
+(Milestone 3 above) and the staff dashboard (role selector, task views, approval queue) are the
 same Next.js/Tailwind app decided in Section 15 of the proposal, but different routes built at
 very different points: the chat widget is guest-facing and belongs in *this* scope, since it's
 what actually gets shown on a portfolio site. The staff dashboard can't be built yet regardless —
@@ -135,8 +149,8 @@ Then run `/speckit.constitution` once, pasting the principles block below as the
 
 | Phase (proposal §9) | `specs/` directory | Gate depth |
 |---|---|---|
-| 0+1+2 — Foundation, room inventory & guest lifecycle (merged 2026-08-05 — see `specs/001-foundation/spec.md` Clarifications) | `specs/001-foundation` | **Full** — blocking gate, wrong here is expensive everywhere downstream |
-| New — Guest chat UI (`web/` app, `/chat` route; not a proposal phase — added 2026-08-05, see MVP scope & order Milestone 4) | `specs/010-guest-chat-ui` | Short — no money math, no novel trust-boundary pattern, just one route wired to an existing ADK endpoint |
+| 0+1+2 — Foundation, room inventory & guest lifecycle (merged — see `specs/001-foundation/spec.md` Clarifications) | `specs/001-foundation` | **Full** — blocking gate, wrong here is expensive everywhere downstream |
+| New — Guest chat UI (`web/` app, `/chat` route; not a proposal phase — added after the original scope, see MVP scope & order Milestone 3) | `specs/010-guest-chat-ui` | Short — no money math, no novel trust-boundary pattern, just one route wired to an existing ADK endpoint |
 | 3 — Resilience & kill switch | `specs/004-resilience` | Short + `/speckit.clarify` (novel pattern, worth one clarify pass) |
 | 4 — Staff ops & continuity | `specs/005-staff-ops` | Short |
 | 5 — Ordering, F&B & billing | `specs/006-fnb-billing` | Short + `/speckit.checklist` (money math, worth the extra check) |

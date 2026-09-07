@@ -26,6 +26,25 @@ reservations table and Phase 1's room inventory both existing first."
 - Q: Is "availability" the same concept at booking time and check-in time? → A: No — two distinct, deliberately different checks. **Reservation availability** (booking time, `create_booking`): is there at least one room of this type not already reserved by an active reservation overlapping these dates? **Room availability** (check-in time, `check_in_guest`): is a *specific* room instance physically free right now? A reservation can pass the first check and still hit the second (e.g. a lingering earlier guest) — that's expected hotel behavior, not a bug, and `check_in_guest`'s existing FR-016 already handles it gracefully.
 - Q: Should `room_features` be seeded with real data this phase even though no tool queries it yet? → A: Yes — confirmed from the source proposal itself (§9 Phase 1 line: "feature-tag table (view/amenities/accessible/smoking)") that this *is* the amenities table, not a placeholder for one. Cheap to seed now alongside `room_types`/`rooms`; avoids a future re-migration just to add data to an already-existing table.
 
+### Session 2026-08-12
+
+- Q: Should a specific physical room be locked in at booking time (`create_booking`), left as a
+  hidden side effect of check-in (`check_in_guest` searching for one itself), or handled as its own
+  explicit step? → A: Its own explicit step — a new `assign_room` tool. Reservation, room
+  assignment, and check-in are three distinct operations, not one: `create_booking` sells
+  *inventory* at the room-type level (`room_id` stays `NULL` — no compulsory room lock); `assign_room`
+  allocates a specific physical room to that reservation and may run at any point after booking
+  (immediately, days later, or the morning of arrival) — mutable until check-in, not a permanent
+  lock, so a disruption (an out-of-order room, a holdover guest, a VIP reassignment) doesn't require
+  undoing a booking, just re-running assignment; `check_in_guest` requires a room already assigned,
+  validates it's currently occupiable (physically vacant, and once `operational_status` exists,
+  `active`), and only then activates the stay. This refines, not reverses, the 2026-08-05 "two
+  distinct availability checks" answer below — inventory availability (booking) and physical-room
+  readiness (assignment/check-in) remain separate concepts, but physical-room handling is now its
+  own tool instead of folded into `check_in_guest`. Matches conventional PMS behavior (Oracle
+  OPERA and Cloudbeds both model reservations that are valid with no room yet assigned, with a
+  separate room-assignment workflow) more closely than either alternative.
+
 **Why merged**: The original phased plan (`implementation_proposal.html` §9) sequenced these as
 Phase 0 → Phase 1 → Phase 2, each blocking the next: Phase 2's tool signatures
 (`verify_guest_identity`, `check_in_guest`, `create_booking`, `modify_booking`) are written against
