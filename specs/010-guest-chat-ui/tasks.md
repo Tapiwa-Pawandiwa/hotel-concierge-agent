@@ -88,10 +88,10 @@ selection, confirmation) start to finish in the UI, no manual reload (spec.md US
 
 ### Implementation for User Story 2
 
-- [ ] T009 [US2] Handle unusually long assistant responses in `ChatWindow.tsx` (e.g. a full room-type
+- [x] T009 [US2] Handle unusually long assistant responses in `ChatWindow.tsx` (e.g. a full room-type
       list) — confirm the message list scrolls correctly and the input stays reachable rather than
       being pushed off-screen (spec.md Edge Cases).
-- [ ] T010 [US2] Add a clear inline error state to `ChatWindow.tsx` for when `/api/chat` returns
+- [x] T010 [US2] Add a clear inline error state to `ChatWindow.tsx` for when `/api/chat` returns
       non-200 (network drop, agent unreachable) — FR-007, contracts/chat-api.md's 502 case.
 - [ ] T011 [US2] Manually validate US2's acceptance scenarios end-to-end through the local UI — a
       full booking including a confirmation-gated action (modify or cancel), confirming the

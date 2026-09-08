@@ -337,6 +337,58 @@ reasoning, not a blanket add-everywhere pass.
       reference candidates by name only, and if disambiguation is genuinely needed, ask the guest to
       state their own contact detail and silently check it against the candidate rather than
       displaying what's on file.
+- [x] T039 [US4] Party size is never collected or enforced — live-tested across several full booking
+      conversations and the agent never once asked how many guests are staying, despite
+      `room_types.max_occupancy` already existing in the schema and already being returned by
+      `list_room_types`. Three parts: (1) migration `010_reservation_num_guests.sql` adding
+      `reservations.num_guests` (int, backfilled from `guests_legacy_kaggle.adults + children` for
+      the original 300 via `booking_reference = 'BK-' || guest_id`, `1` for any other existing row,
+      then set `NOT NULL`); (2) `create_booking` in `tools.py` gains a required `num_guests: int`
+      parameter, validated against the chosen room type's `max_occupancy` (reject with a clear error
+      if `num_guests` is below 1 or exceeds it — same "reject with a structured error" pattern as the
+      availability check, not a silent clamp), and stores it on insert; (3) `agent.py`'s "NEW
+      BOOKINGS" instruction updated so asking for party size is a required step alongside dates, up
+      front — not optional, not inferred — and the agent uses it (with `list_room_types`'s
+      `max_occupancy` already in the response) to steer its own room-type recommendations, same
+      natural-language-reasoning pattern as "a suite with a couch" rather than a new structured filter
+      parameter.
+- [x] T040 [US4] Multi-room bookings under one guest request create fully unlinked reservations —
+      live-tested (Sherlock Holmes, 2 rooms; Dwayne Hayes, 9 rooms) and each room got its own
+      `booking_reference` with no relationship between them, so staff have no way to see "this is one
+      group" rather than unrelated strangers who share a name. Real PMS practice (Opera/Cloudbeds/
+      Mews) keeps one reservation row per physical room (different occupants/times/charges per room
+      stays correct) but ties them together for staff via a shared identifier — **revised
+      2026-09-08 after checking `implementation_proposal.html`**: `reservations.group_booking_id`
+      (already in the schema since migration 002) is NOT that identifier — it's explicitly documented
+      (source proposal §8/§Phase-7 schema note) as reserved for the *formal corporate/event* group-
+      block case, FK'd to `event_bookings` once Phase 7 (`specs/008-business-events`) builds it.
+      Reusing it here would misuse a column reserved for a different concept and collide with that
+      future FK. Confirmed via research this is a real, standard distinction in hotel systems
+      (industry "group booking" = wedding/corporate block; a guest's own multi-room request is a
+      separate, simpler concept) — not inventing a false split.
+
+      Corrected design: a genuinely new, small parent table, not a bare UUID column (unlike
+      `group_booking_id`, which deferred its FK to Phase 7 deliberately — this one doesn't need to
+      defer, so it gets a real FK from day one):
+      ```sql
+      CREATE TABLE booking_parties (
+          id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+          primary_guest_id  uuid NOT NULL REFERENCES guests(id),
+          created_at        timestamptz NOT NULL DEFAULT now()
+      );
+      ALTER TABLE reservations ADD COLUMN booking_party_id uuid REFERENCES booking_parties(id);
+      ```
+      New tool `create_booking_party(idempotency_key, primary_guest_id) -> {booking_party_id}`
+      (Tier 2, same shape as `create_guest_profile`). `create_booking` gains an optional
+      `booking_party_id: str | None = None` parameter, stored on insert, `NULL` for a normal
+      single-room booking (backward compatible). `agent.py` instruction text: when booking more than
+      one room for the same request, call `create_booking_party` ONCE first, then pass the real
+      returned `booking_party_id` to every `create_booking` call in that batch — a real FK, so an
+      invented ID would fail loudly rather than silently, unlike the self-generated-UUID pattern
+      `idempotency_key` uses. Explicitly out of scope, per `CLAUDE.md`'s billing deferral: combined/
+      master payment across a party — no `bill_items`/payment table exists yet, that's
+      `specs/006-fnb-billing`, later. This task only makes staff able to see the party as one unit,
+      not pay for it as one unit.
 
 **Checkpoint**: User Stories 1–4 all independently functional.
 

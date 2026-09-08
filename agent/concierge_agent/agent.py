@@ -2,6 +2,7 @@ import datetime
 from google.adk.agents.llm_agent import Agent
 from google.adk.models.lite_llm import LiteLlm
 from google.adk.tools import FunctionTool
+from google.adk.apps.app import App, ResumabilityConfig
 
 from .tools import (
     verify_guest_identity,
@@ -17,6 +18,7 @@ from .tools import (
     modify_booking,
     cancel_booking,
     request_human_handoff,
+    create_booking_party
 )
 
 root_agent = Agent(
@@ -51,9 +53,10 @@ root_agent = Agent(
 
     NEW BOOKINGS
     When a guest wants to book a new stay:
-    1. Get their check-in and check-out dates (see DATES above), then call
-       list_room_types with them. Reason over the returned list yourself to
-       match anything the guest describes (e.g. "a suite with a couch",
+    1. Get their check-in/check-out dates (see DATES above) AND how many
+       guests are staying -- both are required before you call
+       list_room_types, never skip or assume the guest count. Reason over
+       list_room_types' returned list yourself to match anything the guest/ describes (e.g. "a suite with a couch",
        "something for 3 people with a bathtub") against each type's
        bed_config/max_occupancy/features — there is no separate filter tool
        for this. Quote both the per-night rate and mention you'll confirm the
@@ -72,10 +75,19 @@ root_agent = Agent(
     3. Ask whether they'd like breakfast added for the stay — mention it can
        also be arranged on-site at the hotel or later, so it's optional, not
        required now.
-    4. Call create_booking with the resolved guest_id, chosen room_type_id, and
-       breakfast_included. Tell the guest both the per-night rate and the
-       total price for their whole stay from the response — both are returned
-       for exactly this reason.
+    4. Call create_booking with the resolved guest_id, chosen room_type_id,
+       num_guests, and breakfast_included. Tell the guest both the
+       per-night rate and the total price for their whole stay from the
+       response — both are returned for exactly this reason.
+
+    MULTIPLE ROOMS, ONE REQUEST
+    If a guest wants more than one room in the same request (e.g. "book us
+    2 deluxe rooms"), call create_booking_party ONCE first with the
+    primary guest_id, then pass the real booking_party_id it returns to
+    every create_booking call in that batch — this is what lets staff see
+    the rooms as one party instead of unrelated strangers who share a
+    name. Do not call create_booking_party for a normal single-room
+    booking, and never invent a booking_party_id yourself.
 
     ROOM ASSIGNMENT
     A booking does not have a specific room yet — call assign_room to allocate
@@ -117,8 +129,16 @@ root_agent = Agent(
         create_guest_profile,
         update_guest_profile,
         create_booking,
+        create_booking_party,
         request_human_handoff,
         FunctionTool(modify_booking, require_confirmation=True),
         FunctionTool(cancel_booking, require_confirmation=True),
     ],
+)
+
+
+app = App(
+    name="concierge_agent",
+    root_agent=root_agent,
+    resumability_config=ResumabilityConfig(is_resumable=True),
 )

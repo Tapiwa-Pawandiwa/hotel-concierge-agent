@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 import uuid
 import datetime
 import functools
+import traceback
 
 load_dotenv()
 
@@ -17,12 +18,14 @@ vo = voyageai.Client(api_key=os.environ["VOYAGE_API_KEY"])
 
 _conn: psycopg.Connection | None = None
 
+
 def get_conn() -> psycopg.Connection:
     global _conn
     if _conn is None or _conn.closed:
         _conn = psycopg.connect(os.environ["SUPABASE_DB_URL"])
         register_vector(_conn)
     return _conn
+
 
 def safe_tool(fn):
     """Wraps every agent-facing tool that touches the database so an
@@ -37,17 +40,27 @@ def safe_tool(fn):
     guest's session (FR-008; constitution: every tool returns
     {status, data, error} and never raises).
     """
+
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         try:
             return fn(*args, **kwargs)
         except Exception:
+            # Print the REAL error and a full traceback to the terminal
+            # running adk api_server -- previously this was completely
+            # silent, impossible to debug from the guest-facing message
+            # alone.
+            print(f"--- safe_tool caught an exception in {fn.__name__} ---")
+            print(f"args={args!r} kwargs={kwargs!r}")
+            traceback.print_exc()
             get_conn().rollback()
             return {
                 "status": "error",
                 "error": "Something went wrong processing that request. Please try again, or ask for a staff member.",
             }
+
     return wrapper
+
 
 @safe_tool
 def check_idempotency(cur, key: str, tool_name: str) -> dict | None:
@@ -67,6 +80,7 @@ def check_idempotency(cur, key: str, tool_name: str) -> dict | None:
         return None
     return row[0]
 
+
 @safe_tool
 def record_idempotency(cur, key: str, tool_name: str, result: dict) -> None:
     """
@@ -80,9 +94,11 @@ def record_idempotency(cur, key: str, tool_name: str, result: dict) -> None:
         (key, tool_name, Jsonb(result)),
     )
 
+
 @safe_tool
-def _available_room_count(cur, room_type_id, check_in_date, check_out_date, exclude_booking_reference=None)-> int: 
-   
+def _available_room_count(
+    cur, room_type_id, check_in_date, check_out_date, exclude_booking_reference=None
+) -> int:
     """Shared inventory-availability count -- used by both list_room_types
     and create_booking, so the counting logic exists in exactly one place.
 
@@ -91,8 +107,8 @@ def _available_room_count(cur, room_type_id, check_in_date, check_out_date, excl
     interval: check_in_date inclusive, check_out_date exclusive, so a
     checkout on day X and a new check-in on day X don't count as overlapping.
 
-    excllude bookign ref when rechecking availability for a reservation thats about to be modified 
-    its own row would otherwise count against itself pass its booking reference to leave it out of the already reserved count 
+    excllude bookign ref when rechecking availability for a reservation thats about to be modified
+    its own row would otherwise count against itself pass its booking reference to leave it out of the already reserved count
     """
     cur.execute(
         "SELECT count(*) FROM rooms WHERE room_type_id = %s AND operational_status = 'active'",
@@ -108,10 +124,17 @@ def _available_room_count(cur, room_type_id, check_in_date, check_out_date, excl
           AND check_out_date > %s
                     AND (%s::text IS NULL OR booking_reference != %s)
         """,
-        (room_type_id, check_out_date, check_in_date, exclude_booking_reference, exclude_booking_reference),
+        (
+            room_type_id,
+            check_out_date,
+            check_in_date,
+            exclude_booking_reference,
+            exclude_booking_reference,
+        ),
     )
     reserved = cur.fetchone()[0]
     return total - reserved
+
 
 @safe_tool
 def retrieve_hotel_policy(question: str) -> dict:
@@ -130,7 +153,9 @@ def retrieve_hotel_policy(question: str) -> dict:
     # %s is a psycopg placeholder, safely filled with q_emb (not string formatting).
     # <=> is a pgvector operator: cosine distance between two vectors (smaller = more similar).
     # Meaning: "give me the 2 policy chunks whose embedding is closest to the guest's question."
-    q_emb = vo.embed([question], model="voyage-3.5-lite", input_type="query", output_dimension=1024).embeddings[0]
+    q_emb = vo.embed(
+        [question], model="voyage-3.5-lite", input_type="query", output_dimension=1024
+    ).embeddings[0]
     cur.execute(
         "SELECT source_file, content FROM policy_chunks ORDER by embedding <=> %s::vector limit 2",
         (q_emb,),
@@ -141,6 +166,7 @@ def retrieve_hotel_policy(question: str) -> dict:
         "status": "success",
         "matches": [{"source": r[0], "text": r[1]} for r in rows],
     }
+
 
 @safe_tool
 def verify_guest_identity(
@@ -203,8 +229,14 @@ def verify_guest_identity(
         },
     }
 
+
 @safe_tool
-def assign_room(idempotency_key:str, booking_reference:str, room_id: str | None = None, desired_features: list[str] | None = None,) -> dict: 
+def assign_room(
+    idempotency_key: str,
+    booking_reference: str,
+    room_id: str | None = None,
+    desired_features: list[str] | None = None,
+) -> dict:
     """
     Assigns a specific physical room to a confirmed reservation.
 
@@ -242,11 +274,17 @@ def assign_room(idempotency_key:str, booking_reference:str, room_id: str | None 
     )
     resv = cur.fetchone()
 
-    if resv is None: 
-         result = {"status": "error", "error": f"No reservation found under this reference:  {booking_reference}. "}
-    elif resv[0] != "confirmed": 
-        result = {"status": "error", "error": f"Reservation is '{resv[0]}', not 'confirmed' cannot assign a room. "}
-    else: 
+    if resv is None:
+        result = {
+            "status": "error",
+            "error": f"No reservation found under this reference:  {booking_reference}. ",
+        }
+    elif resv[0] != "confirmed":
+        result = {
+            "status": "error",
+            "error": f"Reservation is '{resv[0]}', not 'confirmed' cannot assign a room. ",
+        }
+    else:
         _, room_type_id, check_in_date, check_out_date = resv
         # A room qualifies if it's the right type, not out of order, and not
         # already the assigned room of a DIFFERENT active reservation whose
@@ -285,9 +323,15 @@ def assign_room(idempotency_key:str, booking_reference:str, room_id: str | None 
 
         if room is None:
             if room_id:
-                result = {"status": "error", "error": "That room isn't available for this reservation's type or dates."}
+                result = {
+                    "status": "error",
+                    "error": "That room isn't available for this reservation's type or dates.",
+                }
             else:
-                result = {"status": "error", "error": "No matching room is currently available for these dates."}
+                result = {
+                    "status": "error",
+                    "error": "No matching room is currently available for these dates.",
+                }
         else:
             found_room_id, room_number, view_type, room_type_name = room
             cur.execute(
@@ -308,6 +352,7 @@ def assign_room(idempotency_key:str, booking_reference:str, room_id: str | None 
     conn.commit()
     cur.close()
     return result
+
 
 @safe_tool
 def list_room_types(check_in_date: str, check_out_date: str) -> dict:
@@ -347,85 +392,97 @@ def list_room_types(check_in_date: str, check_out_date: str) -> dict:
         )
         type_features = [row[0] for row in cur.fetchall()]
 
-        room_types.append({
-            "room_type_id": str(room_type_id),
-            "name": name,
-            "bed_config": bed_config,
-            "max_occupancy": max_occupancy,
-            "sq_meters": sq_meters,
-            "features": type_features,
-            "available": _available_room_count(cur, room_type_id, check_in_date, check_out_date),
-            "rate_per_night": float(base_rate),
-        })
+        room_types.append(
+            {
+                "room_type_id": str(room_type_id),
+                "name": name,
+                "bed_config": bed_config,
+                "max_occupancy": max_occupancy,
+                "sq_meters": sq_meters,
+                "features": type_features,
+                "available": _available_room_count(
+                    cur, room_type_id, check_in_date, check_out_date
+                ),
+                "rate_per_night": float(base_rate),
+            }
+        )
 
     cur.close()
     return {"status": "ok", "data": {"room_types": room_types}}
 
+
 @safe_tool
 def search_guest_profiles(
-        first_name: str | None = None,
-        last_name: str | None = None,
-        email: str | None = None,
-        phone: str | None = None,
-        ) -> dict:
-        """Searches for existing guest profiles by contact info or name.
+    first_name: str | None = None,
+    last_name: str | None = None,
+    email: str | None = None,
+    phone: str | None = None,
+) -> dict:
+    """Searches for existing guest profiles by contact info or name.
 
-        Call this BEFORE create_guest_profile, every time, never create a new
-        profile without searching first. If email or phone is given, matches
-        exactly (case-insensitive) on that alone, since those are the most
-        reliable identifiers. Otherwise falls back to a partial, case-insensitive
-        match on first_name/last_name. Present the returned candidates to the
-        guest conversationally and let them confirm which one (if any) is them,
-        never guess or auto-select on their behalf.
+    Call this BEFORE create_guest_profile, every time, never create a new
+    profile without searching first. If email or phone is given, matches
+    exactly (case-insensitive) on that alone, since those are the most
+    reliable identifiers. Otherwise falls back to a partial, case-insensitive
+    match on first_name/last_name. Present the returned candidates to the
+    guest conversationally and let them confirm which one (if any) is them,
+    never guess or auto-select on their behalf.
 
-        Args:
-            first_name: partial match, used only if email/phone not given.
-            last_name: partial match, used only if email/phone not given.
-            email: exact case-insensitive match, if given.
-            phone: exact case-insensitive match, if given.
+    Args:
+        first_name: partial match, used only if email/phone not given.
+        last_name: partial match, used only if email/phone not given.
+        email: exact case-insensitive match, if given.
+        phone: exact case-insensitive match, if given.
 
-        Returns:
-            {"status": "ok", "data": {"candidates": [{"guest_id", "first_name",
-            "last_name", "email", "phone"}, ...]}}, up to 5 rows. Empty list if
-            nothing matches -- not an error, just no results.
+    Returns:
+        {"status": "ok", "data": {"candidates": [{"guest_id", "first_name",
+        "last_name", "email", "phone"}, ...]}}, up to 5 rows. Empty list if
+        nothing matches -- not an error, just no results.
 
-        """
-        
-        conn = get_conn()
-        cur = conn.cursor()
-        if email:
-            cur.execute(
-                "SELECT id, first_name, last_name, email, phone FROM guests WHERE lower(email) = lower(%s) LIMIT 5",
-                (email,),
-            )
-        elif phone:
-            cur.execute(
-                "SELECT id, first_name, last_name, email, phone FROM guests WHERE lower(phone) = lower(%s) LIMIT 5",
-                (phone,),
-            )
-        else:
-            # Missing first_name/last_name becomes '%' -- a harmless wildcard, so
-            # a last-name-only or first-name-only search still works naturally.
-            cur.execute(
-                """
+    """
+
+    conn = get_conn()
+    cur = conn.cursor()
+    if email:
+        cur.execute(
+            "SELECT id, first_name, last_name, email, phone FROM guests WHERE lower(email) = lower(%s) LIMIT 5",
+            (email,),
+        )
+    elif phone:
+        cur.execute(
+            "SELECT id, first_name, last_name, email, phone FROM guests WHERE lower(phone) = lower(%s) LIMIT 5",
+            (phone,),
+        )
+    else:
+        # Missing first_name/last_name becomes '%' -- a harmless wildcard, so
+        # a last-name-only or first-name-only search still works naturally.
+        cur.execute(
+            """
                 SELECT id, first_name, last_name, email, phone FROM guests
                 WHERE first_name ILIKE %s AND last_name ILIKE %s
                 LIMIT 5
                 """,
-                (f"%{first_name or ''}%", f"%{last_name or ''}%"),
-            )
+            (f"%{first_name or ''}%", f"%{last_name or ''}%"),
+        )
 
-        rows = cur.fetchall()
-        cur.close()
-        return {
-            "status": "ok",
-            "data": {
-                "candidates": [
-                    {"guest_id": str(r[0]), "first_name": r[1], "last_name": r[2], "email": r[3], "phone": r[4]}
-                    for r in rows
-                ]
-            },
-        }
+    rows = cur.fetchall()
+    cur.close()
+    return {
+        "status": "ok",
+        "data": {
+            "candidates": [
+                {
+                    "guest_id": str(r[0]),
+                    "first_name": r[1],
+                    "last_name": r[2],
+                    "email": r[3],
+                    "phone": r[4],
+                }
+                for r in rows
+            ]
+        },
+    }
+
 
 @safe_tool
 def create_guest_profile(
@@ -454,7 +511,7 @@ def create_guest_profile(
     Returns:
         {"status": "ok", "data": {"guest_id": ...}}
     """
-    
+
     conn = get_conn()
     cur = conn.cursor()
     tool_name = "create_guest_profile"
@@ -481,6 +538,7 @@ def create_guest_profile(
     conn.commit()
     cur.close()
     return result
+
 
 @safe_tool
 def update_guest_profile(
@@ -551,6 +609,53 @@ def update_guest_profile(
     cur.close()
     return result
 
+
+@safe_tool
+def create_booking_party(
+    idempotency_key: str,
+    primary_guest_id: str,
+) -> dict:
+    """Creates a booking party -- the link that ties multiple rooms in ONE
+    guest's request together, so staff see them as one party rather than
+    unrelated bookings that happen to share a name.
+
+    Call this ONCE, before create_booking, only when a single guest request
+    covers more than one room. Do NOT call it for a normal single-room
+    booking. Pass the returned booking_party_id to every create_booking
+    call in that batch.
+
+    Args:
+        idempotency_key: a unique string generated once per logical
+            creation attempt.
+        primary_guest_id: the guest_id of the person making the request
+            (already resolved via verify_guest_identity or the
+            profile-search/create tools).
+
+    Returns:
+        {"status": "ok", "data": {"booking_party_id": ...}}
+    """
+
+    conn = get_conn()
+    cur = conn.cursor()
+    tool_name = "create_booking_party"
+
+    cached = check_idempotency(cur, idempotency_key, tool_name)
+    if cached is not None:
+        cur.close()
+        return cached
+
+    cur.execute(
+        "INSERT INTO booking_parties (primary_guest_id) VALUES (%s) RETURNING id",
+        (primary_guest_id,),
+    )
+    booking_party_id = cur.fetchone()[0]
+    result = {"status": "ok", "data": {"booking_party_id": str(booking_party_id)}}
+
+    record_idempotency(cur, idempotency_key, tool_name, result)
+    conn.commit()
+    cur.close()
+    return result
+
 @safe_tool
 def check_in_guest(idempotency_key: str, booking_reference: str) -> dict:
     """Checks a guest into their already-assigned room.
@@ -588,13 +693,22 @@ def check_in_guest(idempotency_key: str, booking_reference: str) -> dict:
     resv = cur.fetchone()
 
     if resv is None:
-        result = {"status": "error", "error": f"No reservation found for {booking_reference}."}
+        result = {
+            "status": "error",
+            "error": f"No reservation found for {booking_reference}.",
+        }
     else:
         status, room_id = resv
         if status != "confirmed":
-            result = {"status": "error", "error": f"Reservation is '{status}', not 'confirmed' — cannot check in."}
+            result = {
+                "status": "error",
+                "error": f"Reservation is '{status}', not 'confirmed' — cannot check in.",
+            }
         elif room_id is None:
-            result = {"status": "error", "error": "No room assigned to this reservation yet — call assign_room first."}
+            result = {
+                "status": "error",
+                "error": "No room assigned to this reservation yet — call assign_room first.",
+            }
         else:
             cur.execute(
                 """
@@ -606,10 +720,19 @@ def check_in_guest(idempotency_key: str, booking_reference: str) -> dict:
                 """,
                 (room_id,),
             )
-            occupancy_status, operational_status, room_number, view_type, room_type_name = cur.fetchone()
+            (
+                occupancy_status,
+                operational_status,
+                room_number,
+                view_type,
+                room_type_name,
+            ) = cur.fetchone()
 
             if occupancy_status != "vacant" or operational_status != "active":
-                result = {"status": "error", "error": "The assigned room isn't ready yet — it may still be occupied or out of order."}
+                result = {
+                    "status": "error",
+                    "error": "The assigned room isn't ready yet — it may still be occupied or out of order.",
+                }
             else:
                 cur.execute(
                     "UPDATE reservations SET status = 'checked_in' WHERE booking_reference = %s",
@@ -634,6 +757,7 @@ def check_in_guest(idempotency_key: str, booking_reference: str) -> dict:
     conn.commit()
     cur.close()
     return result
+
 
 @safe_tool
 def check_out_guest(idempotency_key: str, booking_reference: str) -> dict:
@@ -694,14 +818,17 @@ def check_out_guest(idempotency_key: str, booking_reference: str) -> dict:
     cur.close()
     return result
 
+
 @safe_tool
 def create_booking(
     idempotency_key:str,
     guest_id:str,
-        room_type_id: str,
+    room_type_id: str,
     check_in_date: str,
     check_out_date: str,
+    num_guests: int,
     breakfast_included: bool = False,
+    booking_party_id: str | None = None,
 ) -> dict:
     """Creates a new reservation against the room catalogue.
 
@@ -716,10 +843,16 @@ def create_booking(
         room_type_id: which room type to book (a UUID string, from list_room_types).
         check_in_date: an ISO date string, e.g. "2026-09-01".
         check_out_date: an ISO date string. Must be after check_in_date.
+        num_guests: how many guests are staying (adults + children combined).
+            Always ask -- never assume or default. Must fit within the chosen
+            room type's max_occupancy (list_room_types returns this per type).
         breakfast_included: whether to add breakfast for the whole stay.
             Ask the guest -- don't assume. Breakfast can also be arranged
             on-site at the hotel, or later, so this is optional, not required.
-
+        booking_party_id: pass the SAME value (from create_booking_party)
+            across multiple create_booking calls when one guest request
+            books more than one room. Leave as None for a normal
+            single-room booking -- do not invent one.
     Returns:
         On success: {"status": "ok", "data": {"booking_reference",
         "rate_per_night", "nights", "breakfast_included",
@@ -737,77 +870,105 @@ def create_booking(
         return cached
     if check_in_date < datetime.date.today().isoformat():
         result = {"status": "error", "error": "Check-in date can't be in the past."}
-    
     elif check_out_date <= check_in_date:
-        result = {"status": "error", "error": "Check-out date must be after check-in date."}
+        result = {
+            "status": "error",
+            "error": "Check-out date must be after check-in date.",
+        }
     else:
-        available = _available_room_count(cur, room_type_id, check_in_date, check_out_date)
+        available = _available_room_count(
+            cur, room_type_id, check_in_date, check_out_date
+        )
         if available <= 0:
-            result = {"status": "error", "error": "No room of the requested type is available for those dates."}
-        else:
-            cur.execute("SELECT base_rate FROM room_types WHERE id = %s", (room_type_id,))
-            base_rate = cur.fetchone()[0]
-
-            from datetime import date
-            nights = (date.fromisoformat(check_out_date) - date.fromisoformat(check_in_date)).days
-
-            booking_reference = "BK-" + str(uuid.uuid4())
-            cur.execute(
-                """
-                INSERT INTO reservations
-                    (booking_reference, guest_id, room_type_id, check_in_date, check_out_date, adr, status)
-                VALUES (%s, %s, %s, %s, %s, %s, 'confirmed')
-                """,
-                (booking_reference, guest_id, room_type_id, check_in_date, check_out_date, base_rate),
-            )
-
-            breakfast_total = 0
-            if breakfast_included:
-                # Snapshot the price in effect on check_in_date into
-                # reservation_products -- a later catalogue price change must
-                # never retroactively reprice this already-made booking.
-                cur.execute(
-                    """
-                    SELECT pp.amount, pp.pricing_basis, p.id
-                    FROM product_prices pp
-                    JOIN products p ON p.id = pp.product_id
-                    WHERE p.code = 'BREAKFAST'
-                      AND pp.valid_from <= %s
-                      AND (pp.valid_to IS NULL OR pp.valid_to >= %s)
-                    ORDER BY pp.valid_from DESC
-                    LIMIT 1
-                    """,
-                    (check_in_date, check_in_date),
-                )
-                unit_price, pricing_basis, product_id = cur.fetchone()
-                breakfast_total = unit_price * nights
-                cur.execute(
-                    """
-                    INSERT INTO reservation_products
-                        (reservation_id, product_id, quantity, unit_price, pricing_basis, line_total)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    """,
-                    (booking_reference, product_id, nights, unit_price, pricing_basis, breakfast_total),
-                )
-
-            total_price = (base_rate * nights) + breakfast_total
-
             result = {
-                "status": "ok",
-                "data": {
-                    "booking_reference": booking_reference,
-                    "rate_per_night": float(base_rate),
-                    "nights": nights,
-                    "breakfast_included": breakfast_included,
-                    "breakfast_total": float(breakfast_total),
-                    "total_price": float(total_price),
-                },
+                "status": "error",
+                "error": "No room of the requested type is available for those dates.",
             }
+        else:
+            cur.execute(
+                "SELECT base_rate, max_occupancy FROM room_types WHERE id = %s",
+                (room_type_id,),
+            )
+            base_rate, max_occupancy = cur.fetchone()
+
+            if num_guests < 1 or num_guests > max_occupancy:
+                result = {
+                    "status": "error",
+                    "error": f"This room type sleeps up to {max_occupancy} guests -- {num_guests} exceeds that.",
+                }
+            else:
+                from datetime import date
+
+                nights = (
+                    date.fromisoformat(check_out_date)
+                    - date.fromisoformat(check_in_date)
+                ).days
+
+                booking_reference = "BK-" + str(uuid.uuid4())
+                cur.execute(
+                    """
+                    INSERT INTO reservations
+                        (booking_reference, guest_id, room_type_id, check_in_date, check_out_date, num_guests, booking_party_id, adr, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'confirmed')
+                    """,
+                    (booking_reference, guest_id, room_type_id, check_in_date, check_out_date, num_guests, booking_party_id, base_rate),
+                )
+
+                breakfast_total = 0
+                if breakfast_included:
+                    # Snapshot the price in effect on check_in_date into
+                    # reservation_products -- a later catalogue price change must
+                    # never retroactively reprice this already-made booking.
+                    cur.execute(
+                        """
+                        SELECT pp.amount, pp.pricing_basis, p.id
+                        FROM product_prices pp
+                        JOIN products p ON p.id = pp.product_id
+                        WHERE p.code = 'BREAKFAST'
+                          AND pp.valid_from <= %s
+                          AND (pp.valid_to IS NULL OR pp.valid_to >= %s)
+                        ORDER BY pp.valid_from DESC
+                        LIMIT 1
+                        """,
+                        (check_in_date, check_in_date),
+                    )
+                    unit_price, pricing_basis, product_id = cur.fetchone()
+                    breakfast_total = unit_price * nights
+                    cur.execute(
+                        """
+                        INSERT INTO reservation_products
+                            (reservation_id, product_id, quantity, unit_price, pricing_basis, line_total)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            booking_reference,
+                            product_id,
+                            nights,
+                            unit_price,
+                            pricing_basis,
+                            breakfast_total,
+                        ),
+                    )
+
+                total_price = (base_rate * nights) + breakfast_total
+
+                result = {
+                    "status": "ok",
+                    "data": {
+                        "booking_reference": booking_reference,
+                        "rate_per_night": float(base_rate),
+                        "nights": nights,
+                        "breakfast_included": breakfast_included,
+                        "breakfast_total": float(breakfast_total),
+                        "total_price": float(total_price),
+                    },
+                }
 
     record_idempotency(cur, idempotency_key, tool_name, result)
     conn.commit()
     cur.close()
     return result
+
 
 @safe_tool
 def modify_booking(
@@ -849,11 +1010,20 @@ def modify_booking(
     resv = cur.fetchone()
 
     if resv is None:
-        result = {"status": "error", "error": f"No reservation found for {booking_reference}."}
+        result = {
+            "status": "error",
+            "error": f"No reservation found for {booking_reference}.",
+        }
     elif resv[0] not in ("confirmed", "checked_in"):
-        result = {"status": "error", "error": f"Reservation is '{resv[0]}' — dates can't be changed."}
+        result = {
+            "status": "error",
+            "error": f"Reservation is '{resv[0]}' — dates can't be changed.",
+        }
     elif new_check_out <= new_check_in:
-        result = {"status": "error", "error": "Check-out date must be after check-in date."}
+        result = {
+            "status": "error",
+            "error": "Check-out date must be after check-in date.",
+        }
     else:
         room_type_id = resv[1]
         # Same guard create_booking uses -- a date change is really "give up
@@ -862,15 +1032,21 @@ def modify_booking(
         # reservation's own (still-old-dated) row so it doesn't count
         # against itself.
         available = _available_room_count(
-            cur, room_type_id, new_check_in, new_check_out,
+            cur,
+            room_type_id,
+            new_check_in,
+            new_check_out,
             exclude_booking_reference=booking_reference,
         )
         if available <= 0:
-            result = {"status": "error", "error": "No room of this reservation's room type is available for the new dates."}
+            result = {
+                "status": "error",
+                "error": "No room of this reservation's room type is available for the new dates.",
+            }
         else:
             cur.execute(
                 "UPDATE reservations SET check_in_date=%s, check_out_date = %s WHERE booking_reference = %s",
-                (new_check_in,new_check_out,booking_reference)
+                (new_check_in, new_check_out, booking_reference),
             )
             result = {
                 "status": "ok",
@@ -884,6 +1060,7 @@ def modify_booking(
     conn.commit()
     cur.close()
     return result
+
 
 @safe_tool
 def cancel_booking(idempotency_key: str, booking_reference: str) -> dict:
@@ -918,9 +1095,15 @@ def cancel_booking(idempotency_key: str, booking_reference: str) -> dict:
     resv = cur.fetchone()
 
     if resv is None:
-        result = {"status": "error", "error": f"No reservation found for {booking_reference}."}
+        result = {
+            "status": "error",
+            "error": f"No reservation found for {booking_reference}.",
+        }
     elif resv[0] not in ("confirmed", "checked_in"):
-        result = {"status": "error", "error": f"Reservation is '{resv[0]}' — cannot be cancelled."}
+        result = {
+            "status": "error",
+            "error": f"Reservation is '{resv[0]}' — cannot be cancelled.",
+        }
     else:
         cur.execute(
             "UPDATE reservations SET status = 'cancelled' WHERE booking_reference = %s",
@@ -928,7 +1111,10 @@ def cancel_booking(idempotency_key: str, booking_reference: str) -> dict:
         )
         result = {
             "status": "ok",
-            "data": {"booking_reference": booking_reference, "reservation_status": "cancelled"},
+            "data": {
+                "booking_reference": booking_reference,
+                "reservation_status": "cancelled",
+            },
         }
 
     record_idempotency(cur, idempotency_key, tool_name, result)
@@ -936,10 +1122,11 @@ def cancel_booking(idempotency_key: str, booking_reference: str) -> dict:
     cur.close()
     return result
 
+
 @safe_tool
 def request_human_handoff(reason: str | None = None) -> dict:
     """Acknowledges a guest's request to speak with a staff member.
- 
+
     Tier 1, no persistence this phase -- there's no staff_tasks table yet
     (that arrives in a later phase). This just gives the guest a clear,
     honest acknowledgment instead of the agent dead-ending or continuing
