@@ -71,6 +71,32 @@ work itself is unchanged, only the order. Basic hosting (Cloud Run per §6/§9 r
 open decision on specifics) belongs inside Milestone 3 now too, not a separate later step, since
 "live on the website" needs both the UI and somewhere for it to run.
 
+**JANET brand UI shell, added after the original Milestone 3 scope — boilerplate, built
+incrementally, a piece at a time across sessions rather than landed in one push.** The existing
+`/chat` implementation (session-scoped SSE streaming against `/run_sse`, Tier 3 confirmation
+handling, per-session rate limiting) already works end-to-end — this is a visual pass on top of
+working functionality, not new backend scope. Six discrete, independently-checkable pieces, in a
+sensible build order:
+1. Brand theme tokens — the full espresso/ivory/champagne palette and Cormorant Garamond/Inter/
+   JetBrains Mono type system in the **JANET design system** section below, replacing the default
+   Tailwind-starter palette.
+2. Logo integration — the real JANET mark, referenced from one shared place so it's reused
+   everywhere it appears (sidebar, chat avatar) instead of duplicated per component.
+3. Sidebar shell — persistent nav rail (Chat active; New conversation / My bookings / Hotel
+   information visually present but inert — those need an auth/routing story that doesn't exist
+   yet, not this pass).
+4. "Staff — Coming soon" tab, disabled — the visible signal that the platform is bigger than one
+   chat box, without claiming Phase 6 work that hasn't happened yet.
+5. Branded empty-state greeting and a restyled input bar, replacing the generic starter chat shell.
+6. Message bubble restyle to the brand palette.
+
+Deliberately out of this pass, flagged rather than silently dropped: the room-type image cards and
+the polished Confirm/Cancel button card both need the agent's structured tool results reaching the
+UI, which `stream-client.ts` doesn't do yet (it only yields plain text) — that's real additional
+work, tied to the live system-trace panel below, not a boilerplate styling task. Ordered ahead of
+Phase 6 (staff dashboard) for the same reason as the trace panel: this is the guest-facing side,
+visible on a portfolio now, not staff tooling with no audience yet.
+
 **Live system-trace panel, added after the original Milestone 3 scope.** A plain chat window
 doesn't communicate that this is a real agentic system with real constraints, not a thin wrapper
 around a model — that story only lands if the underlying mechanics are visible, not just the
@@ -88,7 +114,9 @@ unacceptable guest-facing behavior); and the idempotency key itself, visible per
 concrete evidence of the idempotency contract every Tier 2/3 tool already carries. Scoped as part
 of `specs/010-guest-chat-ui` (same route, second pane, not a new surface) — not a staff-dashboard
 feature and not gated behind Phase 6, since it reads the same tool-call stream the chat itself is
-already driving.
+already driving. Surfaced via the `/chat?trace=true` route from the JANET design system's
+Navigation architecture below, not a separate boolean toggle state — same segmented-control
+component that later grows a Staff arm, not a one-off switch.
 
 Milestones 1–2 were originally three separate rows (Phase 0 / Phase 1 / Phase 2), merged
 mid-session because Phase 2's tool signatures (`verify_guest_identity`,
@@ -111,6 +139,344 @@ that's a scope-order violation — flag it rather than building it early.
 
 This is the order things get built in, not a schedule for when — no day/date targets, no "behind
 schedule" framing. The Session start protocol below reports progress against `tasks.md` only.
+
+## JANET design system
+
+Formalizes the guest-facing visual language: **quiet luxury, not generic SaaS luxury** — warm
+ivory surfaces, espresso/near-black navigation, restrained bronze accents, editorial serif
+typography, and very limited semantic colour. The reference point is an AMAN/Four Seasons digital
+concierge, not a conventional chatbot. This is the concrete spec the "JANET brand UI shell"
+checklist above builds against — reference it directly from Cursor while placing each piece,
+rather than re-deriving colours/type per session.
+
+**Key design principle, carried through the whole application:** JANET should not look like an AI
+chatbot that happens to serve a hotel — it should look like the hotel's digital concierge, with
+the AI infrastructure progressively revealed only once the guest enters System view. The guest UI
+communicates luxury hospitality; the System UI communicates the actual agent engineering (HITL,
+RAG, risk-tiering, observability) — that split is what makes the Guest/System toggle a real
+portfolio differentiator, not a debug panel bolted on.
+
+### Core colour system
+
+| Token | Hex | Primary use |
+|---|---|---|
+| `janet-ink` | `#17130F` | Primary text, CTA buttons, icons |
+| `espresso-950` | `#211A14` | Main sidebar / dark navigation |
+| `espresso-900` | `#2C231B` | Sidebar hover, elevated dark surfaces |
+| `walnut-800` | `#49392C` | Secondary luxury brown |
+| `walnut-700` | `#625043` | Secondary text on dark backgrounds |
+| `bronze-600` | `#8A6A45` | Brand accent, selected details |
+| `champagne-500` | `#B69A72` | Logo accents, fine borders, premium details |
+| `sand-300` | `#D8C8B3` | Borders / dividers / subtle controls |
+| `sand-200` | `#E5D9C9` | Hover backgrounds |
+| `linen-100` | `#F0E8DD` | Cards / assistant messages |
+| `ivory-50` | `#F8F4ED` | Main application background |
+| `cream-25` | `#FCFAF6` | Elevated cards / chat canvas |
+| `white` | `#FFFFFF` | Select elevated surfaces |
+
+`#F8F4ED` replaces ordinary SaaS grey as JANET's neutral canvas — not `#F5F5F5`, not blue-grey,
+anywhere in the guest experience; even the neutrals stay warm. Primary brand combination:
+**espresso `#211A14` + ivory `#F8F4ED` + champagne `#B69A72`**, with `#17130F` carrying the
+high-contrast typography.
+
+### Typography — two families, deliberately
+
+The contrast between an editorial serif and a highly legible sans-serif is a major part of the
+luxury effect, not incidental styling.
+
+**Display/brand — Cormorant Garamond.** Wordmark, page titles, welcome statements ("Good
+afternoon / How may I help you today?"), room names, major monetary values, editorial headings.
+
+| Style | Size | Weight | Line height |
+|---|---|---|---|
+| Display XL | 48px | 500 | 52px |
+| Display L | 40px | 500 | 44px |
+| H1 | 36px | 500 | 42px |
+| H2 | 28px | 500 | 34px |
+| H3 | 22px | 600 | 28px |
+| Card title | 18px | 600 | 24px |
+
+**Interface/functional — Inter.** Everything requiring rapid scanning: chat messages, buttons,
+navigation, form controls, dates, prices in tables, dashboard metrics, system traces, badges, tool
+information.
+
+| Style | Size | Weight | Line height |
+|---|---|---|---|
+| Body L | 16px | 400 | 26px |
+| Body | 14px | 400 | 22px |
+| Body S | 13px | 400 | 19px |
+| Label | 12px | 500 | 16px |
+| Button | 14px | 500 | 20px |
+| Caption | 11px | 500 | 16px |
+
+Avoid excessive bold — hierarchy comes from typography, whitespace, and contrast, not from making
+everything 600–700 weight.
+
+### Semantic colours — desaturated, not developer-dashboard bright
+
+The system-trace panel needs colours for risk/system states, but bright dashboard colours would
+clash with the rest of JANET, so every semantic colour here is muted.
+
+| State | Background | Foreground | Usage |
+|---|---|---|---|
+| Success | `#E4ECE5` | `#35553B` | Confirmed booking |
+| Warning | `#F3E7D4` | `#825C2D` | Pending / attention |
+| Error | `#F1DEDA` | `#8B4038` | Failure / rate limit |
+| Info | `#E3E8E8` | `#41595A` | Informational |
+| Neutral | `#ECE7DF` | `#625B53` | Generic status |
+
+**Risk tiers** (Constitution's T1/T2/T3, made visually distinctive rather than left as plain
+badges):
+
+- **T1 — Routine**: `#55715B` text on `#E4ECE5` — e.g. `list_room_types`
+- **T2 — Controlled**: `#916B32` text on `#F3E7D4` — e.g. `create_quote`
+- **T3 — Confirmation required**: `#91473D` text on `#F1DEDA` — e.g. `modify_booking`,
+  `cancel_booking`
+
+T3 should read as "human decision required," not as an alarming bright-red error state.
+
+### Surface hierarchy
+
+| Level | Hex | Use |
+|---|---|---|
+| 0 — Application canvas | `#F8F4ED` | Global background |
+| 1 — Primary content | `#FCFAF6` | Chat canvas, dashboard content |
+| 2 — Cards | `#FFFFFF` | Room cards, reservation cards, confirmation cards |
+| 3 — Soft contextual surface | `#F0E8DD` | Assistant messages, secondary cards |
+| 4 — Selected / hover | `#E5D9C9` | Navigation selection, subtle hover states |
+| Dark surface | `#211A14` | Navigation / sidebar |
+| Dark elevated | `#2C231B` | — |
+
+### Borders & shadows
+
+Very subtle borders, not conventional heavy SaaS shadows:
+
+```css
+--border-subtle: #E4D9CB;
+--border-default: #D8C8B3;
+--border-strong: #BBA78E;
+```
+
+Most cards: `border: 1px solid #E4D9CB;`
+
+```css
+/* standard elevation */
+box-shadow:
+  0 1px 2px rgba(33, 26, 20, 0.04),
+  0 8px 24px rgba(33, 26, 20, 0.05);
+
+/* modals only */
+box-shadow: 0 20px 60px rgba(33, 26, 20, 0.14);
+```
+
+### Border-radius system
+
+Slightly sharper than a generic mockup, deliberately:
+
+```
+XS      4px
+Small   6px
+Medium  8px
+Large   12px   -- most cards
+XL      16px   -- chat bubbles, major containers
+Pill    999px  -- status badges and compact controls only
+```
+
+### Spacing system
+
+4px base unit: `4 / 8 / 12 / 16 / 24 / 32 / 48 / 64 / 96px` (micro → xs → sm → md → lg → xl → 2xl
+→ 3xl → 4xl). Guest interface uses generous spacing specifically: page horizontal padding
+40–48px, major section spacing 48px, card padding 20–24px, chat message spacing 16px, sidebar
+item spacing 8px, input internal padding 16px.
+
+### Buttons
+
+- **Primary** — espresso `#211A14` background, `#FCFAF6` text, hover `#34291F`. E.g. "Confirm
+  booking."
+- **Secondary** — `#F0E8DD` background, `#211A14` text, `#D8C8B3` border. E.g. "View details."
+- **Tertiary** — transparent background, `#49392C` text. E.g. "None of these are me."
+- **Destructive** — `#8B4038` background, `#FFFFFF` text — not bright red, and only surfaced at
+  the actual final destructive action, not earlier in the flow.
+
+### Guest chat message styling
+
+**Reversed 2026-09-10** (live UI feedback, not a design-time decision): the original
+"intentionally subtle" distinction — both bubbles near-identical warm neutrals — tested poorly
+once actually built; not enough contrast to tell guest and JANET messages apart at a glance. Guest
+messages now use the walnut brown token as a dark, high-contrast bubble instead of a second light
+neutral. Still not the classic blue-user/grey-assistant convention — walnut is one of the app's
+own brand tokens, not an arbitrary chat-app blue.
+
+- **JANET message**: `#F0E8DD` background, `#211A14` text, 16px radius.
+- **Guest message**: `#49392C` (walnut) background, `#FCFAF6` (cream) text, 16px radius.
+- **JANET avatar**: the logo symbol inside a `#211A14` circle.
+
+### Tier-3 confirmation card
+
+Arguably the most carefully designed component in the system — it's the one place the HITL
+architecture becomes visible to a guest, not just documented in the Constitution.
+
+```
+Background     #FCFAF6
+Border         #B69A72
+Top accent     #8A6A45
+Heading        Cormorant Garamond, 22px
+Body           Inter, 14px
+Primary CTA    #211A14
+```
+
+A small **"T3 · Confirmation required"** badge sits above the heading — that's what visually
+connects the guest-facing interaction to the risk-tier architecture underneath it, the same
+connection the system-trace panel makes on the other side of the toggle.
+
+### System trace typography
+
+The trace panel is technical transparency, not part of the hospitality conversation — its
+typography shifts deliberately. Inter for almost everything; **JetBrains Mono, 12–13px** only for
+tool/call identifiers and raw data: tool names (`create_booking`, `verify_guest_identity`),
+idempotency keys, JSON, request IDs, tool parameters, raw payloads.
+
+Full type system across the app: **Cormorant Garamond** (luxury/editorial) → **Inter** (interface)
+→ **JetBrains Mono** (agent/system internals) — the typography itself differentiates hotel
+experience, application interface, and AI infrastructure as you move through the three surfaces.
+
+### Staff dashboard — same system, not a separate one
+
+No separate design system for Phase 6 — the staff dashboard stays unmistakably JANET, just more
+information-dense:
+
+```
+                 JANET DESIGN SYSTEM
+                        |
+          +-------------+-------------+
+          |             |             |
+       GUEST          STAFF        SYSTEM
+     Hospitality    Operations    Observability
+          |             |             |
+      Editorial      Dense UI       Technical
+      imagery        tables         traces
+      serif H1       metrics        monospace
+```
+
+Guest = hospitality-first (large serif headings, photography, whitespace). Staff =
+operations-first (smaller typography, tighter spacing, tables, filters, KPIs). System =
+engineering-first (monospace identifiers, trace trees, JSON inspection). All three read off the
+same token set above — a stronger design concept than three pages that happen to share a brown
+palette.
+
+### Navigation architecture
+
+Built as a segmented control, not a binary toggle, from the start — **Guest | Staff | System** is
+the eventual shape, but only **Guest | System** is exposed during Milestone 3:
+
+- Guest: `/chat`
+- System: `/chat?trace=true`
+- Staff (Phase 6, later): `/staff`
+
+Architecting it as a segmented control now, even with one arm disabled, avoids redesigning
+navigation when Phase 6 actually lands — same reasoning as the "Staff — Coming soon" tab already
+in the MVP scope note above.
+
+### Design tokens (CSS)
+
+```css
+:root {
+  /* Brand */
+  --janet-ink: #17130F;
+  --janet-espresso: #211A14;
+  --janet-espresso-elevated: #2C231B;
+  --janet-walnut: #49392C;
+  --janet-bronze: #8A6A45;
+  --janet-champagne: #B69A72;
+
+  /* Neutral */
+  --janet-sand: #D8C8B3;
+  --janet-sand-soft: #E5D9C9;
+  --janet-linen: #F0E8DD;
+  --janet-ivory: #F8F4ED;
+  --janet-cream: #FCFAF6;
+  --janet-white: #FFFFFF;
+
+  /* Text */
+  --text-primary: #17130F;
+  --text-secondary: #625B53;
+  --text-muted: #8A8178;
+  --text-inverse: #FCFAF6;
+
+  /* Borders */
+  --border-subtle: #E4D9CB;
+  --border-default: #D8C8B3;
+  --border-strong: #BBA78E;
+
+  /* Semantic */
+  --success-bg: #E4ECE5;
+  --success-text: #35553B;
+  --warning-bg: #F3E7D4;
+  --warning-text: #825C2D;
+  --danger-bg: #F1DEDA;
+  --danger-text: #8B4038;
+  --info-bg: #E3E8E8;
+  --info-text: #41595A;
+
+  /* Typography */
+  --font-display: "Cormorant Garamond", Georgia, serif;
+  --font-ui: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+}
+```
+
+## JANET voice & response formatting
+
+Live-tested finding, not a design-time preference: `concierge_agent`'s replies currently read like
+a generic AI assistant, not a hotel concierge, and worse, leak literal markdown syntax into the
+chat — e.g. `**Ane**` shows up as literal asterisks, because `MessageBubble` renders plain text
+(`whitespace-pre-wrap`, no markdown parser) and nothing in `agent.py`'s instruction string tells
+the model to stop producing markdown in the first place. This is a fix to that instruction string,
+not to the UI — the bubble rendering is already correct, the model's output needs to change to
+match it. Belongs with `concierge_agent`'s existing instruction text (`specs/001-foundation`
+scope), a separate track of work from the `web/` reskin above even though both land in the same
+chat window.
+
+**Rules, concrete enough to paste into the instruction string directly:**
+
+1. **No markdown syntax** — no `**bold**`, no bullet or numbered lists, no headers. State things
+   plainly in sentences; there is no renderer on the other end to turn `**` into bold, so it must
+   never be produced.
+2. **No emoji.** A luxury concierge doesn't communicate in emoji — this is the same "quiet
+   luxury, not generic SaaS" restraint the design system already applies to colour, extended to
+   voice.
+3. **Em dashes used sparingly** — at most one per message, only where it earns its place. Strings
+   of em-dash-joined clauses read as AI-generated, not as a person speaking.
+4. **Short by default.** Routine turns (greetings, confirmations, simple answers) get 1-3
+   sentences. Reserve length for genuinely multi-part information (e.g. presenting several room
+   options), and even then, stay tight rather than exhaustive — the guest should be able to
+   scan the reply, not have to read it closely.
+5. **No filler openers.** Cut "I'm here to help you with anything you need," "Of course!," "Great
+   question!" — answer, or ask the next question, directly.
+6. **Warm, not chatty.** The register is an experienced concierge speaking in person, not a
+   customer-support bot performing enthusiasm.
+
+**Concrete before/after**, using the actual greeting that surfaced this:
+
+> Before: "Hello! 👋 Welcome to Janet Hotel! My name is **Ane**, and I'm your concierge assistant.
+> I'm here to help you with anything you need — whether that's booking a room, answering questions
+> about our hotel policies, checking in or out, or just making your stay more comfortable. What
+> can I help you with today?"
+>
+> After: "Good afternoon, and welcome to Janet. I'm Ane, your concierge. How may I help you
+> today?"
+
+One nuance worth carrying into the actual instruction rewrite: the chat UI's own empty state
+already shows "Good afternoon / How may I help you today?" as a static headline (JANET design
+system, Typography) before the guest sends anything — so the agent's first real reply doesn't need
+to re-ask that question, it can go straight to being useful once the guest states what they want.
 
 ## Session start protocol
 

@@ -5,8 +5,9 @@
 - `specs/001-foundation` complete (it is — all 5 user stories independently functional).
 - A GCP project with billing enabled, `gcloud` CLI authenticated (`gcloud auth login`), Cloud Run
   and Cloud Scheduler APIs enabled.
-- The three existing secrets (`ANTHROPIC_API_KEY`, `SUPABASE_DB_URL`, `VOYAGE_API_KEY`) plus a new
-  one (the reset endpoint's shared secret, any random string) added to Google Secret Manager.
+- The three existing secrets (`ANTHROPIC_API_KEY`, `SUPABASE_DB_URL`, `VOYAGE_API_KEY`) added to
+  Google Secret Manager. No reset-secret needed — the reset job is IAM-authenticated, not
+  header-authenticated (research.md §6, revised 2026-09-09).
 
 ## Local validation (before any deploy)
 
@@ -39,11 +40,13 @@
    optional).
 9. Set the agent's Cloud Run URL as an env var on the frontend service (`gcloud run services update
    chat-ui --set-env-vars=AGENT_URL=<url from step 6>`).
-10. Set the shared reset secret and `DEMO_BASELINE_CUTOFF` (current timestamp, set once) as env
-    vars/secrets on the agent service.
-11. Create a Cloud Scheduler job hitting the agent's `/internal/reset-demo-data` with the shared
-    secret header, on a schedule comfortably inside 24 hours (e.g. every 6 hours) — satisfies
-    SC-007.
+10. Deploy the reset script as its own Cloud Run Job (not a route on the agent service):
+    `gcloud run jobs deploy reset-demo-data --source=agent --command=python --args=scripts/reset_demo_data.py --set-secrets=SUPABASE_DB_URL=SUPABASE_DB_URL:latest --project=hotel-concierge-507914 --region=<region>`,
+    plus `--set-env-vars=DEMO_BASELINE_CUTOFF=<current timestamp, set once>`.
+11. Create a Cloud Scheduler job that invokes that Job's execution directly via the Cloud Run Admin
+    API (`gcloud scheduler jobs create http reset-demo-data-trigger --schedule="0 */6 * * *" --uri=https://run.googleapis.com/v2/projects/hotel-concierge-507914/locations/<region>/jobs/reset-demo-data:run --http-method=POST --oauth-service-account-email=<a service account with roles/run.invoker on the job>`)
+    — comfortably inside SC-007's 24-hour bound. No public HTTP endpoint involved anywhere in this
+    step; IAM is the security boundary, not a shared secret.
 
 ## Post-deploy validation (the real acceptance test)
 
@@ -52,8 +55,8 @@
     SC-001/SC-005.
 13. Confirm the agent's own Cloud Run URL, hit directly (not through the frontend), returns
     `403`/`401` — proving it's genuinely non-public, not just "not linked anywhere."
-14. Manually trigger the reset endpoint once (with the correct header) and confirm a
-    demo-created reservation disappears while a seeded (pre-existing) reservation does not —
+14. Manually trigger the reset job once (`gcloud run jobs execute reset-demo-data --region=<region>`)
+    and confirm a demo-created reservation disappears while a seeded (pre-existing) reservation does not —
     proving the cutoff logic is scoped correctly before trusting it to run unattended on a
     schedule.
 15. Full run-through of `specs/001-foundation`'s `quickstart.md` Stories 1-5, this time entirely

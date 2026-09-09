@@ -1,23 +1,25 @@
 "use client"; // needs to run in the browser, since it creates a random ID
-              // and passes it to ChatWindow.
-
+// and passes it to ChatWindow.
 import { useState } from "react";
 import ChatWindow from "@/components/ChatWindow";
+import ChatHeader from "@/components/ChatHeader";
+import Sidebar from "@/components/SideBar";
 
 export default function ChatPage() {
-  // Generate ONE random ID per visit, the moment the page loads, and keep
-  // it in memory only for this browser tab -- this IS the "session" that
-  // ties all of this visitor's messages together (FR-009: never saved to
-  // localStorage/cookies, so it's gone the moment the tab closes).
-  //
-  // useState(() => crypto.randomUUID()) -- passing a FUNCTION to useState
-  // (instead of a plain value) means "only run this once, the very first
-  // time," rather than generating a brand-new random ID on every redraw.
+  // Generate ONE random ID per visit, the moment the page loads (FR-009 —
+  // never saved to localStorage/cookies, so it's gone the moment the tab
+  // closes).
   const [sessionId] = useState(() => crypto.randomUUID());
 
   return (
-    <main className="h-screen bg-white">
-      <ChatWindow sessionId={sessionId} />
-    </main>
+    <div className="h-screen flex bg-janet-ivory">
+      <Sidebar />
+      <main className="flex-1 flex flex-col overflow-hidden">
+        <ChatHeader />
+        <div className="flex-1 overflow-hidden">
+          <ChatWindow sessionId={sessionId} />
+        </div>
+      </main>
+    </div>
   );
 }

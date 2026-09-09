@@ -1,4 +1,4 @@
-google-adk[extensions]==2.5.0
+google-adk[extensions]==2.8.0
 psycopg==3.3.4
 psycopg-binary==3.3.4
 pgvector==0.5.0

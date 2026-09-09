@@ -55,6 +55,32 @@ A first-time visitor — someone reviewing this as a portfolio piece, not someon
 
 ---
 
+### User Story 4 - See the agent's real mechanics at work (Priority: P4)
+
+Someone evaluating this as a portfolio/engineering artifact — not a hotel guest — can switch into a
+"System" view alongside the same conversation and see real, per-tool-call detail as it happens:
+which tool fired, its risk tier, the idempotency key used for a write action, and the actual policy
+citation a RAG lookup returned. This is what proves the system is a real agentic architecture with
+real constraints, not a thin chat wrapper around a language model.
+
+**Why this priority**: Doesn't change whether the guest-facing chat itself works — US1-US3 already
+cover that entirely. This is an additive transparency layer for evaluators/recruiters, valuable for
+the project's dual portfolio/learning purpose but strictly on top of an already-functioning chat.
+
+**Independent Test**: Open `/chat?trace=true`, ask a policy question (triggers
+`retrieve_hotel_policy`) and separately trigger a Tier 3 action (modify or cancel a booking).
+Confirm the trace pane shows the real tool name, risk-tier badge, idempotency key (for the write
+action), and the actual retrieved policy chunk + source file (for the policy question) — matching
+what genuinely happened, not placeholder data.
+
+**Acceptance Scenarios**:
+
+1. **Given** a visitor is on `/chat?trace=true` and asks a policy question, **When** the agent calls `retrieve_hotel_policy`, **Then** the trace pane shows the exact source file and matched text the tool actually returned.
+2. **Given** a visitor triggers a Tier 3 action, **When** the agent calls that tool, **Then** the trace pane shows a "T3" risk-tier badge and the real idempotency key generated for that call, and the guest-facing side shows a real Confirm/Cancel button pair instead of a plain-text yes/no prompt.
+3. **Given** a visitor is on the plain `/chat` route (trace not requested), **When** they use the chat normally, **Then** no trace UI appears and the experience is identical to before this story existed.
+
+---
+
 ### Edge Cases
 
 - What happens when the visitor sends a new message while the assistant is still generating its response to the previous one?
@@ -62,6 +88,8 @@ A first-time visitor — someone reviewing this as a portfolio piece, not someon
 - What happens if the visitor's connection drops partway through a streamed response — does the partial message stay visible, and can they retry?
 - How is an unusually long assistant response (e.g. a full list of room options with descriptions) displayed without breaking the page layout or requiring excessive scrolling to reach the input box?
 - What happens if the visitor submits an empty message, or pastes a very large block of text?
+- What does the trace pane show when a tool call fails (`safe_tool`'s error path) — silently nothing, or a visible failure entry?
+- What does the trace pane show when a guest declines a Tier 3 confirmation via the new button UI?
 
 ## Requirements *(mandatory)*
 
@@ -78,11 +106,16 @@ A first-time visitor — someone reviewing this as a portfolio piece, not someon
 - **FR-009**: The system MUST NOT persist a visitor's conversation or identity beyond their current browser session — there is no login, so nothing ties a return visit back to a prior one.
 - **FR-010**: The system MUST apply a basic request-rate cap (per visitor) to protect against runaway usage against the underlying, metered LLM API — reversed into scope 2026-09-03 once the feature's own goal (public, portfolio-linked hosting) made an uncapped public endpoint a real cost risk, not a hypothetical one. A visitor who exceeds the cap MUST see a clear message explaining they've sent too many messages too quickly, not a silent failure or generic error.
 - **FR-011**: The system MUST periodically reset the public demo's data (reservations, guest profiles created by public visitors, room state) back to a known-good seed state, on a fixed schedule — the constitution's Principle X (Public Demo Guardrails) requires either this or full per-visitor data isolation before any public deployment; scheduled reset is the one chosen for this milestone (2026-09-03) as the smaller-scope option. Full per-visitor isolation remains explicitly deferred to `specs/004-resilience`.
+- **FR-012** (added 2026-09-10, User Story 4): The system MUST provide a `/chat?trace=true` view that renders, for each tool call the agent makes during the conversation, the tool's name, its risk tier (T1/T2/T3), and — for Tier 2/3 write calls — the idempotency key used for that call.
+- **FR-013** (added 2026-09-10, User Story 4): For any call to `retrieve_hotel_policy`, the trace view MUST show the actual source document, matched text, and a similarity/relevance score the tool returned — not a mocked or pre-staged example. `retrieve_hotel_policy` does not currently compute or return a score (confirmed live, `research.md` §8); this requires a small `agent/concierge_agent/tools.py` change, not just a frontend one.
+- **FR-014** (added 2026-09-10, User Story 4): When the agent raises a Tier 3 confirmation request, the guest-facing chat — on both `/chat` and `/chat?trace=true` — MUST render a real Confirm/Cancel button pair instead of requiring the guest to type a raw "yes"/"no" reply. This supersedes FR-004's original "handled entirely as normal chat text" framing for the confirmation *control* itself; the underlying request/response protocol (already implemented) is unchanged.
+- **FR-015** (added 2026-09-10, User Story 4): The plain `/chat` route (trace not requested) MUST behave exactly as it did before User Story 4 — no trace UI, no change to the guest-facing conversation itself, other than the FR-014 button change which applies to both routes.
 
 ### Key Entities
 
 - **Conversation (session-scoped)**: The ordered sequence of messages exchanged between one visitor and the concierge agent during their current visit. Not tied to any visitor identity beyond the browser session, and not retrievable after that session ends.
 - **Message**: A single turn within a conversation — either the visitor's submitted text, or the assistant's response (which may arrive incrementally), including any confirmation prompt the assistant raises before a guarded action.
+- **Tool Call (trace-only, ephemeral, added 2026-09-10)**: One tool invocation within the current conversation — its name, risk tier, arguments (including idempotency key when present), and eventual result (or failure). Never persisted; exists only in the browser's in-memory trace for the current session, discarded when the tab closes — same lifetime as Conversation.
 
 ## Success Criteria *(mandatory)*
 
@@ -95,6 +128,8 @@ A first-time visitor — someone reviewing this as a portfolio piece, not someon
 - **SC-005**: The chat surface is reachable from a public URL with zero local setup steps required by the visitor.
 - **SC-006**: A visitor sending messages at a normal conversational pace never encounters the rate limit; only clearly abnormal, rapid-fire usage does.
 - **SC-007**: The public demo's data returns to a known-good state at least once every 24 hours, bounding how long any cross-visitor data interference from one visitor's actions can persist.
+- **SC-008** (added 2026-09-10, User Story 4): On `/chat?trace=true`, every tool call the agent makes during a conversation appears in the trace pane within the same few seconds the guest sees the agent's own reply — not delayed, not batched at the end.
+- **SC-009** (added 2026-09-10, User Story 4): The Tier 3 confirmation control (Confirm/Cancel buttons) is visually distinguishable from a normal message bubble in 100% of manual test runs — a reviewer glancing at the transcript can tell exactly where a guarded action was confirmed.
 
 ## Assumptions
 
@@ -105,3 +140,6 @@ A first-time visitor — someone reviewing this as a portfolio piece, not someon
 - Basic per-visitor rate limiting AND a scheduled public-demo data reset are both in scope for this feature (2026-09-03 — see `CLAUDE.md`), together satisfying the constitution's Principle X gate on public deployment. Full per-visitor *state isolation* and a fuller abuse-protection/guardrails system remain out of scope, deferred to `specs/004-resilience`. Between resets, a public visitor can in principle still see or act on another visitor's demo data (e.g. a guessed booking reference) — accepted as a bounded, small-window risk for a portfolio demo, not eliminated entirely.
 - The staff dashboard, role selection, and any staff/ops/sales-agent-facing views are entirely out of scope; this specification covers only the guest-facing surface.
 - F&B ordering and table-booking capabilities are out of scope for this feature — they belong to the next milestone and are not required for this chat surface to be considered complete.
+- **Added 2026-09-10 (User Story 4)**: Risk tier (T1/T2/T3) is not present anywhere in the ADK SSE stream — it is a static classification that must be maintained as a small lookup table in the frontend (tool name → tier), kept in sync by hand with the constitution's own tiering and `agent.py`'s actual `require_confirmation=True` wiring. Not derived at runtime, and not automatically kept correct if a tool's tier changes without a matching frontend update.
+- **Added 2026-09-10 (User Story 4)**: `functionResponse` events (a tool's actual return value) arrive on SSE events with `content.role === "user"`, not `"model"` — confirmed via a live raw-SSE probe against the running agent. `stream-client.ts`'s current role filter discards every tool result today; User Story 4 requires loosening that filter, not just adding new event types on top of it.
+- **Added 2026-09-10 (User Story 4)**: Room-type image cards (guest-facing visual room browsing) and the "Staff — Coming soon" sidebar tab predate this story and are tracked separately in `CLAUDE.md`'s JANET UI shell checklist; only the trace panel, the risk/idempotency/citation display, and the Tier 3 confirmation button are in this story's scope.

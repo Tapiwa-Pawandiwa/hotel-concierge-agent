@@ -1,26 +1,105 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Brand */
+  --janet-ink: #17130F;
+  --janet-espresso: #211A14;
+  --janet-espresso-elevated: #2C231B;
+  --janet-walnut: #49392C;
+  --janet-walnut-light: #625043;
+  --janet-bronze: #8A6A45;
+  --janet-champagne: #B69A72;
+
+  /* Neutral */
+  --janet-sand: #D8C8B3;
+  --janet-sand-soft: #E5D9C9;
+  --janet-linen: #F0E8DD;
+  --janet-ivory: #F8F4ED;
+  --janet-cream: #FCFAF6;
+  --janet-white: #FFFFFF;
+
+
+  /* Chat bubbles -- CLAUDE.md's "Guest chat message styling" gives these
+     two their own literal hex values, separate from the core palette above */
+  --janet-guest-bubble: #b7a599;
+  --janet-assistant-bubble: var(--janet-linen);
+
+  /* Text */
+  --text-primary: #17130F;
+  --text-secondary: #625B53;
+  --text-muted: #8A8178;
+  --text-inverse: #FCFAF6;
+
+  /* Borders */
+  --border-subtle: #E4D9CB;
+  --border-default: #D8C8B3;
+  --border-strong: #BBA78E;
+
+  /* Semantic */
+  --success-bg: #E4ECE5;
+  --success-text: #35553B;
+  --warning-bg: #F3E7D4;
+  --warning-text: #825C2D;
+  --danger-bg: #F1DEDA;
+  --danger-text: #8B4038;
+  --info-bg: #E3E8E8;
+  --info-text: #41595A;
+
+  /* What Tailwind's bg-background/text-foreground resolve to */
+  --background: var(--janet-ivory);
+  --foreground: var(--text-primary);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-janet-ink: var(--janet-ink);
+  --color-janet-espresso: var(--janet-espresso);
+  --color-janet-espresso-elevated: var(--janet-espresso-elevated);
+  --color-janet-walnut: var(--janet-walnut);
+  --color-janet-walnut-light: var(--janet-walnut-light);
+  --color-janet-bronze: var(--janet-bronze);
+  --color-janet-champagne: var(--janet-champagne);
+  --color-janet-sand: var(--janet-sand);
+  --color-janet-sand-soft: var(--janet-sand-soft);
+  --color-janet-linen: var(--janet-linen);
+  --color-janet-ivory: var(--janet-ivory);
+  --color-janet-cream: var(--janet-cream);
+  --color-janet-white: var(--janet-white);
+  --color-janet-guest-bubble: var(--janet-guest-bubble);
+  --color-janet-assistant-bubble: var(--janet-assistant-bubble);
+
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-text-inverse: var(--text-inverse);
+
+  --color-border-subtle: var(--border-subtle);
+  --color-border-default: var(--border-default);
+  --color-border-strong: var(--border-strong);
+
+  --color-success-bg: var(--success-bg);
+  --color-success-text: var(--success-text);
+  --color-warning-bg: var(--warning-bg);
+  --color-warning-text: var(--warning-text);
+  --color-danger-bg: var(--danger-bg);
+  --color-danger-text: var(--danger-text);
+  --color-info-bg: var(--info-bg);
+  --color-info-text: var(--info-text);
+
+  --font-sans: var(--font-ui);
+  --font-display: var(--font-display);
+  --font-mono: var(--font-mono);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+}
+
+.shadow-elevation {
+  box-shadow:
+    0 1px 2px rgba(33, 26, 20, 0.04),
+    0 8px 24px rgba(33, 26, 20, 0.05);
 }

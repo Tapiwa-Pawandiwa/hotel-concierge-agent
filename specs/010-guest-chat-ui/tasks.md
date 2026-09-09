@@ -72,7 +72,7 @@ rather than appearing all at once (spec.md US1 Acceptance Scenarios).
 - [x] T007 [US1] Create `web/app/chat/page.tsx` — the `/chat` route; generates a `session_id` (UUID)
       once per page load via `crypto.randomUUID()`, held in component state only (FR-009 — never
       written to `localStorage`/cookies), renders `ChatWindow`.
-- [ ] T008 [US1] Manually validate US1's acceptance scenarios from spec.md against the local dev
+- [x] T008 [US1] Manually validate US1's acceptance scenarios from spec.md against the local dev
       server (`npm run dev` + local `adk api_server`) — quickstart.md steps 2-3.
 
 **Checkpoint**: US1 fully functional locally — this is the demoable core.
@@ -93,7 +93,7 @@ selection, confirmation) start to finish in the UI, no manual reload (spec.md US
       being pushed off-screen (spec.md Edge Cases).
 - [x] T010 [US2] Add a clear inline error state to `ChatWindow.tsx` for when `/api/chat` returns
       non-200 (network drop, agent unreachable) — FR-007, contracts/chat-api.md's 502 case.
-- [ ] T011 [US2] Manually validate US2's acceptance scenarios end-to-end through the local UI — a
+- [x] T011 [US2] Manually validate US2's acceptance scenarios end-to-end through the local UI — a
       full booking including a confirmation-gated action (modify or cancel), confirming the
       confirmation prompt renders as a normal message and the guest's next reply is treated as the
       answer (FR-004) — quickstart.md step 3.
@@ -111,40 +111,60 @@ with no setup (spec.md US3); rate limit and scheduled reset both verifiably work
 
 ### Implementation for User Story 3
 
-- [ ] T012 [US3] Implement `web/lib/rate-limit.ts` — in-memory `Map<sessionId, {count, windowStart}>`,
+- [x] T012 [US3] Implement `web/lib/rate-limit.ts` — in-memory `Map<sessionId, {count, windowStart}>`,
       e.g. 20 messages / 5 minutes per session (research.md §5); wire it into
       `web/app/api/chat/route.ts` as the first check, returning `429` with the message from
       contracts/chat-api.md before any call to the agent.
-- [ ] T013 [US3] Responsive pass on `web/app/chat/page.tsx`/`ChatWindow.tsx` — confirm usable at
+- [x] T013 [US3] Responsive pass on `web/app/chat/page.tsx`/`ChatWindow.tsx` — confirm usable at
       ~375px width, no horizontal scroll, no overlapping elements (FR-008, SC-004).
-- [ ] T014 [US3] Implement the reset endpoint on the agent side, `agent/scripts/reset_demo_data.py`
-      + a small trigger route added to `concierge_agent` — per contracts/chat-api.md's reset
-      endpoint contract and data-model.md's cutoff logic (delete `reservations`/`reservation_products`
-      and `guests` with `legacy_guest_id IS NULL` created after `DEMO_BASELINE_CUTOFF`; reset `rooms`
-      occupancy/housekeeping to defaults), gated by the `X-Reset-Secret` header check.
-- [ ] T015 [US3] Deploy the agent (non-public): `adk deploy cloud_run --project=hotel-concierge-507914
+- [x] T014 [US3] Implement `agent/scripts/reset_demo_data.py` as a **standalone script** — revised
+      2026-09-09, no HTTP route needed: `adk deploy cloud_run` only accepts a plain agent directory
+      (confirmed via `--help`, no custom-route hook), and a Cloud Run Job is the correct GCP
+      primitive for a scheduled batch task anyway (research.md §6). Deletes `reservations` created
+      after `DEMO_BASELINE_CUTOFF` (`reservation_products` cascades automatically — confirmed via the
+      live FK's `ON DELETE CASCADE`); deletes `guests` with `legacy_guest_id IS NULL` created after
+      that same cutoff; resets every `rooms` row's occupancy/housekeeping to defaults; deletes
+      now-orphaned `booking_parties` rows.
+- [x] T015 [US3] Deploy the agent (non-public): `adk deploy cloud_run --project=hotel-concierge-507914
       --region=<region> --service_name=concierge-agent agent/concierge_agent`, declining public
       access (quickstart.md step 6). Human runs this — needs interactive confirmation and their own
       deploy-time judgment call on region.
-- [ ] T016 [US3] Create the four secrets in Secret Manager (`ANTHROPIC_API_KEY`, `SUPABASE_DB_URL`,
-      `VOYAGE_API_KEY`, reset shared secret) and grant the agent service access (quickstart.md
-      step 10). Human runs this — secret values shouldn't pass through the agent's own context.
-- [ ] T017 [US3] Update `web/app/api/chat/route.ts` to call the deployed agent's Cloud Run URL
+- [x] T016 [US3] Create the three secrets in Secret Manager (`ANTHROPIC_API_KEY`, `SUPABASE_DB_URL`,
+      `VOYAGE_API_KEY`) and grant the agent service access (quickstart.md step 10 — no reset secret
+      needed, revised 2026-09-09). Human runs this — secret values shouldn't pass through the
+      agent's own context.
+- [x] T017 [US3] Update `web/app/api/chat/route.ts` to call the deployed agent's Cloud Run URL
       (via an `AGENT_URL` env var) instead of `localhost:8000`, using Cloud Run's service-to-service
       identity token for auth (research.md §3) rather than a public call.
-- [ ] T018 [US3] Grant the frontend Cloud Run service's identity `roles/run.invoker` on the agent
+- [x] T018 [US3] Grant the frontend Cloud Run service's identity `roles/run.invoker` on the agent
       service (quickstart.md step 7) — human runs this, after both services exist.
-- [ ] T019 [US3] Deploy the frontend (public): `gcloud run deploy chat-ui --source=web
+- [x] T019 [US3] Deploy the frontend (public): `gcloud run deploy chat-ui --source=web
       --project=hotel-concierge-507914 --region=<region> --allow-unauthenticated --max-instances=1`
       (quickstart.md step 8 — `--max-instances=1` is load-bearing for T012's rate limiter, not
       optional). Human runs this.
-- [ ] T020 [US3] Create the Cloud Scheduler job hitting the agent's reset trigger on a fixed cadence
-      (e.g. every 6 hours) with the shared secret header (quickstart.md step 11). Human runs this.
+- [ ] T020 [US3] Deploy `reset_demo_data.py` as its own Cloud Run Job, then create a Cloud Scheduler
+      job that invokes that Job's execution directly via the Cloud Run Admin API (IAM-authenticated,
+      no shared secret — quickstart.md step 10-11, revised 2026-09-09) on a fixed cadence (e.g.
+      every 6 hours). Human runs this.
 - [ ] T021 [US3] Post-deploy validation per quickstart.md steps 12-15: public URL reachable with zero
       setup from an unfamiliar device; the agent's own Cloud Run URL confirmed non-public
       (401/403 on direct hit); reset endpoint manually triggered once and confirmed to remove a
       demo-created reservation while leaving seeded ones untouched; full `specs/001-foundation`
       quickstart Stories 1-5 re-run through the public URL.
+- [x] T022 [US3] Found live during T015/T016's own verification, not from a hand-written test:
+      the first successful `adk deploy cloud_run` produced a container that crashes on the *first*
+      real conversation (`/run_sse`) with `ImportError: LiteLLM support requires: pip install
+      google-adk[extensions]` — confirmed via `gcloud logging read` against the live Cloud Run
+      revision, not guessed. Root cause: `adk deploy cloud_run` looks for `requirements.txt`
+      *inside the agent's own source folder* (`agent/concierge_agent/requirements.txt`) — confirmed
+      directly in `cli_deploy.py` — not at `agent/requirements.txt`, this project's convention since
+      T002. Since that file didn't exist where ADK expects it, the deployed container had *none* of
+      our real dependencies (not just missing `[extensions]` — `psycopg`, `pgvector`, `voyageai`
+      too), and only appeared to work because agent module loading is lazy: `/list-apps` never
+      imports `tools.py`, only an actual `/run_sse` call does. Fixed by adding
+      `agent/concierge_agent/requirements.txt` (same content as `agent/requirements.txt`, kept in
+      sync manually — duplicated only because ADK's tool hardcodes this exact location, not a new
+      convention). Requires a redeploy (same command as T015) to actually take effect.
 
 **Checkpoint**: All three user stories independently functional — the chat is live, public, rate-limited, and self-resetting.
 

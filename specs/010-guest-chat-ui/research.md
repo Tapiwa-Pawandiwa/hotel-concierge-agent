@@ -96,22 +96,30 @@ small is disproportionate and works against "fastest path to live."
 
 ## 6. Scheduled public-demo data reset (FR-011)
 
-**Decision**: A new script, `agent/scripts/reset_demo_data.py`, exposed behind a small trigger
-endpoint on the agent service that checks a shared-secret header (so only Cloud Scheduler can invoke
-it, not any public visitor). Cloud Scheduler calls it on a fixed cadence (e.g. every 6 hours,
-comfortably inside SC-007's 24-hour bound). The reset logic reuses schema that already exists —
-**no new column needed**: `guests.created_at`/`reservations.created_at` (added this session, T027)
-already distinguish the original 300 seeded rows from anything created afterward. Concretely:
-delete `reservations` (and their `reservation_products`) with `created_at` after a fixed baseline
-cutoff timestamp; delete `guests` with `created_at` after that same cutoff **and** `legacy_guest_id
-IS NULL` (never touch the seeded 300, which all have a `legacy_guest_id`); reset every `rooms` row's
-`occupancy_status`/`housekeeping_status` back to their defaults.
+**Decision, revised 2026-09-09**: A new standalone script, `agent/scripts/reset_demo_data.py`,
+deployed as its own **Cloud Run Job** (not a route on the agent's own service) —
+`gcloud run jobs deploy reset-demo-data --source=agent --command=python --args=scripts/reset_demo_data.py`.
+Cloud Scheduler triggers the job execution directly against the Cloud Run Admin API
+(`POST https://run.googleapis.com/v2/projects/{project}/locations/{region}/jobs/reset-demo-data:run`),
+authenticated via `--oauth-service-account-email` — a real IAM-authenticated call, not a public HTTP
+endpoint at all. (Original design in this section called for a shared-secret HTTP route added to the
+agent's own FastAPI app — corrected once `adk deploy cloud_run` was confirmed to only accept a plain
+agent directory, no hook for a custom route; Cloud Run Jobs is the right-sized GCP primitive for a
+run-to-completion scheduled task anyway, not a retrofit.) The reset logic itself reuses schema that
+already exists — **no new column needed**: `guests.created_at`/`reservations.created_at` (T027)
+already distinguish the original 300 seeded rows from anything created afterward. Concretely: delete
+`reservations` with `created_at` after a fixed baseline cutoff timestamp (`reservation_products`
+cascades automatically — confirmed via the live FK's `ON DELETE CASCADE`); delete `guests` with
+`created_at` after that same cutoff **and** `legacy_guest_id IS NULL` (never touch the seeded 300,
+which all have a `legacy_guest_id`); reset every `rooms` row's `occupancy_status`/
+`housekeeping_status` back to their defaults; delete now-orphaned `booking_parties` rows.
 
-**Rationale**: Reusing the audit-metadata columns already shipped this session avoids a new
+**Rationale**: A Cloud Run Job is a run-to-completion container invoked on demand or on a schedule —
+exactly what a periodic batch script needs, with no persistent server, no public port, and no
+custom-secret-header security to get right, since IAM (the OAuth service account) is the real
+security boundary. Reusing the audit-metadata columns already shipped this session avoids a new
 migration entirely — the smallest-scope option available, matching why scheduled reset was chosen
-over full isolation in the first place. The shared-secret header check matters: without it, the
-trigger endpoint would itself be a new unauthenticated write surface, undermining the same guardrail
-it exists to support.
+over full isolation in the first place.
 
 **Alternatives considered**: A full point-in-time DB restore/snapshot on schedule — rejected,
 Supabase-managed restore is a heavier, slower mechanism than a targeted delete for this narrow a
@@ -132,3 +140,38 @@ convention (`.env`, gitignored) with the equivalent production mechanism.
 **Alternatives considered**: Plain `--set-env-vars` with secrets inline — rejected, defeats the
 point of a secret manager and each of these three keys already has real cost/access exposure if
 leaked (Anthropic API billing, DB credentials).
+
+## 8. Trace panel data source (added 2026-09-10, User Story 4)
+
+**Decision**: Loosen `stream-client.ts`'s event filter from "skip anything where `role !== 'model'`"
+to also process `role === "user"` events carrying a `functionResponse` part, and start reading
+`functionCall` parts for every tool name (not just `adk_request_confirmation`, which is all it reads
+today). Pair each `functionCall`/`functionResponse` by their shared `id` field into one trace entry:
+`{toolName, args, riskTier, result}`.
+
+**Rationale**: Grounded in a live raw-SSE probe against the actual running local agent (not assumed)
+— asked "What time is check-in and check-out?" to trigger `retrieve_hotel_policy`, captured the full
+event stream. Findings:
+
+- The `functionCall` part (tool name + args, including any `idempotency_key` argument on write
+  tools) arrives on a `role:"model"`, `partial:false` event — already passes the existing role
+  filter today, it's just never read for anything besides the one hardcoded confirmation-tool name.
+- The `functionResponse` part (the tool's actual `{status, data/matches, error}` return value)
+  arrives on a **separate event with `role:"user"`** — the current filter silently discards every
+  one of these. This is the real gap behind `CLAUDE.md`'s "flag rather than silently drop" note
+  about the trace panel.
+- Both parts share the same `id` (e.g. `toolu_01DPM5XBAxVR6cjtMfGgdiFy`, generated by the model) —
+  the correct join key for pairing a call with its eventual result.
+- Risk tier is not present anywhere in the stream at all — confirmed absent from every event field
+  in the capture. It has no runtime source; it must be a static `TOOL_RISK_TIERS` table maintained
+  by hand in the frontend.
+- `retrieve_hotel_policy`'s actual live return value was
+  `{"status":"success","matches":[{"source":"checkin_checkout.md","text":"..."}]}` — no
+  similarity/relevance score field at all. Showing one (per `CLAUDE.md`'s "source chunk + similarity
+  score" description) requires selecting and returning the pgvector cosine distance
+  (`embedding <=> %s::vector`) alongside each match in `tools.py` — real application-code work, not
+  a UI-only change.
+
+**Alternatives considered**: A second, non-SSE polling endpoint dedicated to trace data — rejected;
+the data already exists in the one stream the UI already consumes, so a second endpoint would be
+duplicate plumbing for data already in hand.
