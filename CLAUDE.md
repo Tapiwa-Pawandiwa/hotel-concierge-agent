@@ -46,7 +46,7 @@ end-to-end on the real schema, tested, demoable. `ops_agent`/`sales_agent`, the 
 resilience/kill-switch, and the event-feasibility engine stay fully documented (already are in
 `implementation_proposal.html`) but are **not** part of this scope — they're the next milestone
 after, not squeezed into this one. Per-visitor state isolation is still deliberately deferred past
-this scope — get it solid locally and tested first. **Reversed 2026-09-03**: basic rate limiting is
+this scope — get it solid locally and tested first. **Reversed**: basic rate limiting is
 now in scope for Milestone 3 (Guest chat UI), not deferred — the original deferral assumed the
 agent stayed local; once it's genuinely public (this milestone's own goal, portfolio-linked), an
 unauthenticated endpoint calling a real, metered Claude API needs at least basic abuse protection
@@ -139,6 +139,34 @@ that's a scope-order violation — flag it rather than building it early.
 
 This is the order things get built in, not a schedule for when — no day/date targets, no "behind
 schedule" framing. The Session start protocol below reports progress against `tasks.md` only.
+**Versioning over dates, going forward**: when a milestone boundary is actually reached, mark it
+with a git tag (e.g. `v0.1-foundation-complete`) instead of a date in prose — a tag is a durable,
+verifiable record pulled from the repo itself, where a date is a calendar entry that goes stale
+the moment a session gets skipped and, worse, has already once caused real confusion for another
+Claude instance reading these docs without shared context on "what day is it." Any future
+"reversed"/"revisited" note in this file should cite the tag or milestone it happened relative to,
+never a calendar date.
+
+**Observability, evals/tests, and voice formatting gate multi-agent work — reordered ahead of
+Phase 6.** Before `ops_agent`/`sales_agent` (multi-agent split, Phase 6 in the Spec-kit workflow
+table below) gets started, three things land first, in this order:
+1. **Observability** — the live system-trace panel (already scoped under Milestone 3 above,
+   `specs/010-guest-chat-ui`) actually gets built, not just documented.
+2. **Evals and tests** — two distinct things, both currently thin or undocumented, both pulled
+   forward: automated unit tests against `agent/concierge_agent/tools.py` (pytest, no LLM in the
+   loop — currently not scoped anywhere, `requirements.txt` has no test tooling at all yet), and
+   the real eval suite (previously Phase 8 / `specs/009-eval-roi`, positioned *after* Phase 6 in
+   the original proposal's phase numbering — pulled ahead of it here). Milestone 5's "hand-written
+   test pass" above is a stopgap, not a substitute for either.
+3. **Voice & response formatting** — the fix already specified in JANET voice & response
+   formatting below (no markdown leaking as literal characters, no emoji, concise concierge tone).
+
+Reasoning: adding a second agent multiplies the surface area that has to be trusted, and there's
+no reliable way to tell whether a multi-agent handoff is working if there's not yet a way to
+measure whether the single-agent system is working. Instrument and measure before scaling
+complexity, not after. The proposal's original phase numbers stay as a reference index into
+`implementation_proposal.html`'s content — not a build-order commitment — same principle already
+established for the Milestone 3/4 swap above.
 
 ## JANET design system
 
@@ -546,6 +574,11 @@ Then run `/speckit.constitution` once, pasting the principles block below as the
 | 7 — Business events, experiences, pricing | `specs/008-business-events` | **Full** — newest, most failure-prone path (proposal §9 Phase 8 eval notes) |
 | 8 — Cost tracking, eval, ROI | `specs/009-eval-roi` | Short |
 | 9 — Voice | not yet scoped | deferred |
+
+**Phase 8 (eval/ROI) now precedes Phase 6 (multi-agent split & dashboard) in actual build order**,
+despite the table's numbering — see the "Observability, evals/tests, and voice formatting gate
+multi-agent work" note in MVP scope & order above. The numbers below are a reference index into
+`implementation_proposal.html`'s phase content, not a commitment to build them in that order.
 
 `/speckit.specify` and `/speckit.plan` for each phase should draw directly on `implementation_proposal.html` — the ER diagrams, tool signatures, and migration SQL in §4/§11/§17 are already-decided requirements, not things for spec-kit to (re)discover from scratch. Feed them in as context rather than starting each phase from a blank feature description.
 
